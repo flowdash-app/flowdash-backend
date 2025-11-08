@@ -113,7 +113,7 @@ class WorkflowService:
                 action='toggle_workflow',
                 resource_type='workflow',
                 resource_id=workflow_id,
-                metadata=json.dumps({
+                meta_data=json.dumps({
                     'instance_id': instance_id,
                     'workflow_id': workflow_id,
                     'enabled': enabled

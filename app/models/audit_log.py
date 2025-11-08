@@ -12,7 +12,7 @@ class AuditLog(Base):
     action = Column(String, nullable=False, index=True)  # 'toggle_workflow', 'view_error', etc.
     resource_type = Column(String, nullable=False)  # 'workflow', 'instance', etc.
     resource_id = Column(String, nullable=True)
-    metadata = Column(Text)  # JSON string for additional data
+    meta_data = Column(Text)  # JSON string for additional data
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     
     # Relationships
