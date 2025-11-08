@@ -1,0 +1,37 @@
+# Web Framework
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+python-multipart==0.0.9
+
+# Database
+sqlalchemy==2.0.35
+psycopg2-binary>=2.9.0
+alembic==1.13.2
+
+# Firebase
+firebase-admin==6.5.0
+
+# Authentication & Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Environment
+python-dotenv==1.0.1
+pydantic>=2.10.0
+pydantic-settings>=2.6.0
+
+# HTTP Client (for FCM)
+httpx==0.27.0
+
+# Logging
+structlog==24.1.0
+
+# Encryption
+cryptography==42.0.7
+
+# Development
+pytest==8.3.0
+pytest-asyncio==0.23.7
+black==24.4.2
+ruff==0.5.0
+
