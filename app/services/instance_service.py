@@ -104,10 +104,11 @@ class InstanceService:
         user_id: str,
         name: str,
         url: str,
-        api_key: str
+        api_key: str,
+        enabled: bool = True
     ) -> N8NInstance:
         """Create a new n8n instance"""
-        self.logger.info(f"create_instance: Entry - user: {user_id}, name: {name}")
+        self.logger.info(f"create_instance: Entry - user: {user_id}, name: {name}, enabled: {enabled}")
         
         try:
             # Ensure user exists
@@ -130,7 +131,8 @@ class InstanceService:
                 user_id=user_id,
                 name=name,
                 url=url,
-                api_key_encrypted=encrypted_key
+                api_key_encrypted=encrypted_key,
+                enabled=enabled
             )
             
             db.add(instance)
@@ -162,7 +164,8 @@ class InstanceService:
         user_id: str,
         name: str = None,
         url: str = None,
-        api_key: str = None
+        api_key: str = None,
+        enabled: bool = None
     ) -> N8NInstance:
         """Update an existing n8n instance"""
         self.logger.info(f"update_instance: Entry - instance: {instance_id}, user: {user_id}")
@@ -176,6 +179,8 @@ class InstanceService:
                 instance.url = url
             if api_key is not None:
                 instance.api_key_encrypted = encrypt_api_key(api_key)
+            if enabled is not None:
+                instance.enabled = enabled
             
             db.commit()
             db.refresh(instance)

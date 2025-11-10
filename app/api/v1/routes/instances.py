@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict
 from app.core.middleware import get_current_user
 from app.core.database import get_db
 from app.services.instance_service import InstanceService
@@ -12,21 +12,26 @@ router = APIRouter()
 
 
 class InstanceCreate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)  # Allows both api_key and apiKey
+    
     name: str
     url: str
-    api_key: str
+    api_key: str = Field(..., alias="apiKey")
+    enabled: bool = True  # Default to enabled when creating
 
 
 class InstanceUpdate(BaseModel):
-    name: str = None
-    url: str = None
-    api_key: str = None
+    model_config = ConfigDict(populate_by_name=True)  # Allows both api_key and apiKey
+    
+    name: str | None = None
+    url: str | None = None
+    api_key: str | None = Field(None, alias="apiKey")
+    enabled: bool | None = None  # Optional: update enabled state
 
 
-@router.get("/")
-async def list_instances(
-    current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db),
+async def _list_instances(
+    current_user: dict,
+    db: Session,
 ):
     """List all n8n instances for the current user"""
     logger.info(f"list_instances: Entry - user: {current_user['uid']}")
@@ -41,11 +46,20 @@ async def list_instances(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/")
-async def create_instance(
-    instance_data: InstanceCreate,
+@router.get("")
+@router.get("/")
+async def list_instances(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
+):
+    """List all n8n instances for the current user"""
+    return await _list_instances(current_user, db)
+
+
+async def _create_instance(
+    instance_data: InstanceCreate,
+    current_user: dict,
+    db: Session,
 ):
     """Create a new n8n instance"""
     logger.info(f"create_instance: Entry - user: {current_user['uid']}, name: {instance_data.name}")
@@ -57,13 +71,25 @@ async def create_instance(
             current_user['uid'],
             instance_data.name,
             instance_data.url,
-            instance_data.api_key
+            instance_data.api_key,
+            instance_data.enabled
         )
         logger.info(f"create_instance: Success - instance: {instance.id}")
         return instance
     except Exception as e:
         logger.error(f"create_instance: Failure - {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("")
+@router.post("/")
+async def create_instance(
+    instance_data: InstanceCreate,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Create a new n8n instance"""
+    return await _create_instance(instance_data, current_user, db)
 
 
 @router.get("/{instance_id}")
@@ -105,7 +131,8 @@ async def update_instance(
             current_user['uid'],
             instance_data.name,
             instance_data.url,
-            instance_data.api_key
+            instance_data.api_key,
+            instance_data.enabled
         )
         logger.info(f"update_instance: Success - instance: {instance_id}")
         return instance

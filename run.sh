@@ -30,6 +30,42 @@ if [ ! -f ".env" ]; then
     echo ""
 fi
 
+# Check if Docker is available
+if command -v docker &> /dev/null && docker compose version &> /dev/null; then
+    echo -e "${BLUE}Starting Docker Compose dev services...${NC}"
+    docker compose -f docker-compose.dev.yml up -d
+    
+    # Wait for PostgreSQL to be ready
+    echo -e "${BLUE}Waiting for PostgreSQL to be ready...${NC}"
+    timeout=30
+    counter=0
+    while ! docker compose -f docker-compose.dev.yml exec -T postgres pg_isready -U flowdash &> /dev/null; do
+        if [ $counter -ge $timeout ]; then
+            echo -e "${YELLOW}⚠ Warning: PostgreSQL did not become ready in time${NC}"
+            break
+        fi
+        sleep 1
+        counter=$((counter + 1))
+    done
+    
+    if [ $counter -lt $timeout ]; then
+        echo -e "${GREEN}✓ PostgreSQL is ready${NC}"
+    fi
+    echo ""
+    
+    # Set up cleanup function to stop docker compose on exit
+    cleanup() {
+        echo ""
+        echo -e "${YELLOW}Stopping Docker Compose dev services...${NC}"
+        docker compose -f docker-compose.dev.yml down
+    }
+    trap cleanup EXIT
+else
+    echo -e "${YELLOW}⚠ Warning: Docker/Docker Compose not found. Skipping dev services startup.${NC}"
+    echo "Make sure PostgreSQL is running if you need database access."
+    echo ""
+fi
+
 echo -e "${GREEN}Starting FlowDash Backend...${NC}"
 echo -e "${BLUE}API will be available at: http://localhost:8000${NC}"
 echo -e "${BLUE}API Docs: http://localhost:8000/docs${NC}"

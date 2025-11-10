@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     
     # API
     api_v1_str: str = "/api/v1"
+    api_base_url: Optional[str] = "https://api.flow-dash.com"
     secret_key: str
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, ForeignKey, Text
+from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Boolean
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 from datetime import datetime
@@ -12,6 +12,7 @@ class N8NInstance(Base):
     name = Column(String, nullable=False)
     url = Column(String, nullable=False)
     api_key_encrypted = Column(Text, nullable=False)  # Encrypted API key
+    enabled = Column(Boolean, default=True, nullable=False)  # Enable/disable instance
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     

@@ -22,33 +22,72 @@ class WorkflowService:
         self,
         db: Session,
         instance_id: str,
-        user_id: str
-    ) -> list[dict]:
-        """Get workflows from n8n instance"""
-        self.logger.info(f"get_workflows: Entry - instance: {instance_id}, user: {user_id}")
+        user_id: str,
+        limit: int = 100,
+        cursor: str | None = None,
+        active: bool | None = None
+    ) -> dict:
+        """
+        Get workflows from n8n instance with pagination support.
+        Returns: {data: list[dict], nextCursor: str | None}
+        """
+        self.logger.info(f"get_workflows: Entry - instance: {instance_id}, user: {user_id}, limit: {limit}, cursor: {cursor}, active: {active}")
         
         try:
+            # Validate limit (n8n API max is 250)
+            if limit > 250:
+                limit = 250
+            elif limit < 1:
+                limit = 100
+            
             # Get instance and verify ownership
             instance = self.instance_service.get_instance(db, instance_id, user_id)
             api_key = self.instance_service.get_decrypted_api_key(instance)
+            
+            # Build query parameters
+            params = {"limit": limit}
+            if cursor:
+                params["cursor"] = cursor
+            if active is not None:
+                params["active"] = str(active).lower()
             
             # Call n8n API
             async with httpx.AsyncClient() as client:
                 response = await client.get(
                     f"{instance.url}/api/v1/workflows",
                     headers={"X-N8N-API-KEY": api_key},
+                    params=params,
                     timeout=30.0
                 )
                 response.raise_for_status()
-                workflows = response.json()
+                result = response.json()
+            
+            # Handle n8n API response structure
+            # n8n returns: {data: [...], nextCursor: "..."} or just array for older versions
+            if isinstance(result, list):
+                # Legacy format - return as array, no pagination
+                workflows_data = result
+                next_cursor = None
+            else:
+                # New format with pagination
+                workflows_data = result.get("data", [])
+                next_cursor = result.get("nextCursor")
             
             self.analytics.log_success(
                 action='get_workflows',
                 user_id=user_id,
-                parameters={'instance_id': instance_id, 'workflow_count': len(workflows)}
+                parameters={
+                    'instance_id': instance_id,
+                    'workflow_count': len(workflows_data),
+                    'has_next': next_cursor is not None
+                }
             )
-            self.logger.info(f"get_workflows: Success - instance: {instance_id}, count: {len(workflows)}")
-            return workflows
+            self.logger.info(f"get_workflows: Success - instance: {instance_id}, count: {len(workflows_data)}, has_next: {next_cursor is not None}")
+            
+            return {
+                "data": workflows_data,
+                "nextCursor": next_cursor
+            }
         except httpx.HTTPError as e:
             self.analytics.log_failure(
                 action='get_workflows',
@@ -146,5 +185,153 @@ class WorkflowService:
                 }
             )
             self.logger.error(f"toggle_workflow: Failure - {e}")
+            raise
+    
+    async def get_executions(
+        self,
+        db: Session,
+        instance_id: str,
+        user_id: str,
+        workflow_id: str | None = None,
+        limit: int = 20,
+        cursor: str | None = None,
+        status: str | None = None
+    ) -> dict:
+        """
+        Get executions from n8n instance with pagination support.
+        Returns: {data: list[dict], nextCursor: str | None}
+        """
+        self.logger.info(f"get_executions: Entry - instance: {instance_id}, user: {user_id}, workflow_id: {workflow_id}, limit: {limit}, cursor: {cursor}, status: {status}")
+        
+        try:
+            # Validate limit (n8n API max is 250, default is 20)
+            if limit > 250:
+                limit = 250
+            elif limit < 1:
+                limit = 20
+            
+            # Get instance and verify ownership
+            instance = self.instance_service.get_instance(db, instance_id, user_id)
+            api_key = self.instance_service.get_decrypted_api_key(instance)
+            
+            # Build query parameters
+            params = {"limit": limit}
+            if cursor:
+                params["cursor"] = cursor
+            if workflow_id:
+                params["workflowId"] = workflow_id
+            if status:
+                params["status"] = status
+            
+            # Call n8n API
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{instance.url}/api/v1/executions",
+                    headers={"X-N8N-API-KEY": api_key},
+                    params=params,
+                    timeout=30.0
+                )
+                response.raise_for_status()
+                result = response.json()
+            
+            # Handle n8n API response structure
+            # n8n returns: {data: [...], nextCursor: "..."} or just array for older versions
+            if isinstance(result, list):
+                # Legacy format - return as array, no pagination
+                executions_data = result
+                next_cursor = None
+            else:
+                # New format with pagination
+                executions_data = result.get("data", [])
+                next_cursor = result.get("nextCursor")
+            
+            self.analytics.log_success(
+                action='get_executions',
+                user_id=user_id,
+                parameters={
+                    'instance_id': instance_id,
+                    'workflow_id': workflow_id,
+                    'execution_count': len(executions_data),
+                    'has_next': next_cursor is not None
+                }
+            )
+            self.logger.info(f"get_executions: Success - instance: {instance_id}, count: {len(executions_data)}, has_next: {next_cursor is not None}")
+            
+            return {
+                "data": executions_data,
+                "nextCursor": next_cursor
+            }
+        except httpx.HTTPError as e:
+            self.analytics.log_failure(
+                action='get_executions',
+                error=str(e),
+                user_id=user_id,
+                parameters={'instance_id': instance_id, 'workflow_id': workflow_id}
+            )
+            self.logger.error(f"get_executions: Failure - {e}")
+            raise
+        except Exception as e:
+            self.analytics.log_failure(
+                action='get_executions',
+                error=str(e),
+                user_id=user_id,
+                parameters={'instance_id': instance_id, 'workflow_id': workflow_id}
+            )
+            self.logger.error(f"get_executions: Failure - {e}")
+            raise
+    
+    async def get_execution_by_id(
+        self,
+        db: Session,
+        instance_id: str,
+        execution_id: str,
+        user_id: str
+    ) -> dict:
+        """Get execution details by ID"""
+        self.logger.info(f"get_execution_by_id: Entry - instance: {instance_id}, execution: {execution_id}, user: {user_id}")
+        
+        try:
+            # Get instance and verify ownership
+            instance = self.instance_service.get_instance(db, instance_id, user_id)
+            api_key = self.instance_service.get_decrypted_api_key(instance)
+            
+            # Call n8n API
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{instance.url}/api/v1/executions/{execution_id}",
+                    headers={"X-N8N-API-KEY": api_key},
+                    timeout=30.0
+                )
+                response.raise_for_status()
+                result = response.json()
+            
+            self.analytics.log_success(
+                action='get_execution_by_id',
+                user_id=user_id,
+                parameters={
+                    'instance_id': instance_id,
+                    'execution_id': execution_id,
+                }
+            )
+            self.logger.info(f"get_execution_by_id: Success - execution: {execution_id}")
+            
+            return result
+        except httpx.HTTPError as e:
+            self.analytics.log_failure(
+                action='get_execution_by_id',
+                error=str(e),
+                user_id=user_id,
+                parameters={'instance_id': instance_id, 'execution_id': execution_id}
+            )
+            self.logger.error(f"get_execution_by_id: Failure - {e}")
+            raise
+        except Exception as e:
+            self.analytics.log_failure(
+                action='get_execution_by_id',
+                error=str(e),
+                user_id=user_id,
+                parameters={'instance_id': instance_id, 'execution_id': execution_id}
+            )
+            self.logger.error(f"get_execution_by_id: Failure - {e}")
             raise
 
