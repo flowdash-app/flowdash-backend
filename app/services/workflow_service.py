@@ -327,21 +327,31 @@ class WorkflowService:
         db: Session,
         instance_id: str,
         execution_id: str,
-        user_id: str
+        user_id: str,
+        include_data: bool = True
     ) -> dict:
-        """Get execution details by ID"""
-        self.logger.info(f"get_execution_by_id: Entry - instance: {instance_id}, execution: {execution_id}, user: {user_id}")
+        """Get execution details by ID
+        
+        Args:
+            db: Database session
+            instance_id: n8n instance ID
+            execution_id: Execution ID
+            user_id: User ID for ownership verification
+            include_data: Whether to include the execution's detailed data (default True)
+        """
+        self.logger.info(f"get_execution_by_id: Entry - instance: {instance_id}, execution: {execution_id}, user: {user_id}, include_data: {include_data}")
         
         try:
             # Get instance and verify ownership
             instance = self.instance_service.get_instance(db, instance_id, user_id)
             api_key = self.instance_service.get_decrypted_api_key(instance)
             
-            # Call n8n API
+            # Call n8n API with includeData parameter
             async with httpx.AsyncClient(follow_redirects=False) as client:
                 response = await client.get(
                     f"{instance.url}/api/v1/executions/{execution_id}",
                     headers={"X-N8N-API-KEY": api_key},
+                    params={"includeData": include_data},
                     timeout=30.0
                 )
                 

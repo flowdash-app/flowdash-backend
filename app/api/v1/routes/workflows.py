@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 from app.core.middleware import get_current_user
 from app.core.database import get_db
 from app.services.workflow_service import WorkflowService
@@ -8,6 +9,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+class GetExecutionRequest(BaseModel):
+    """Request model for getting execution by ID - uses POST with body for secure instance_id handling"""
+    instance_id: str
+    include_data: bool = True  # Whether to include the execution's detailed data (default True)
 
 
 @router.get("")
@@ -120,15 +127,18 @@ async def get_executions(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/executions/{execution_id}")
+@router.post("/executions/{execution_id}")
 async def get_execution_by_id(
     execution_id: str,
-    instance_id: str = Query(..., description="n8n instance ID"),
+    request: GetExecutionRequest = Body(...),
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Get execution details by ID"""
-    logger.info(f"get_execution_by_id: Entry - user: {current_user['uid']}, execution: {execution_id}, instance: {instance_id}")
+    """Get execution details by ID - uses POST with body for secure instance_id handling"""
+    instance_id = request.instance_id
+    include_data = request.include_data
+    
+    logger.info(f"get_execution_by_id: Entry - user: {current_user['uid']}, execution: {execution_id}, instance: {instance_id}, include_data: {include_data}")
     
     try:
         service = WorkflowService()
@@ -136,7 +146,8 @@ async def get_execution_by_id(
             db,
             instance_id,
             execution_id,
-            current_user['uid']
+            user_id=current_user['uid'],
+            include_data=include_data
         )
         logger.info(f"get_execution_by_id: Success - execution: {execution_id}")
         return result
