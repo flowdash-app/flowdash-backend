@@ -4,9 +4,26 @@ from app.core.firebase import init_firebase
 from app.core.database import engine, Base
 from app.api.v1.router import api_router
 import logging
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def get_version() -> str:
+    """Read version from VERSION file, fallback to default if not found."""
+    version_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "VERSION")
+    try:
+        if os.path.exists(version_file):
+            with open(version_file, "r") as f:
+                version = f.read().strip()
+                if version:
+                    return version
+    except Exception as e:
+        logger.warning(f"Could not read VERSION file: {e}")
+    # Fallback to default version
+    return "1.0.0"
+
 
 # Initialize Firebase
 init_firebase()
@@ -16,7 +33,7 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="FlowDash API",
-    version="1.0.0",
+    version=get_version(),
     debug=settings.debug,
     redirect_slashes=False,
 )
