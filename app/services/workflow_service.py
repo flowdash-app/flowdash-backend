@@ -52,13 +52,27 @@ class WorkflowService:
                 params["active"] = str(active).lower()
             
             # Call n8n API
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(follow_redirects=False) as client:
                 response = await client.get(
                     f"{instance.url}/api/v1/workflows",
                     headers={"X-N8N-API-KEY": api_key},
                     params=params,
                     timeout=30.0
                 )
+                
+                # Check for redirects (e.g., Cloudflare Access)
+                if response.status_code in (301, 302, 303, 307, 308):
+                    from fastapi import HTTPException, status
+                    redirect_location = response.headers.get('Location', 'unknown')
+                    self.logger.warning(
+                        f"get_workflows: n8n instance returned redirect {response.status_code} to {redirect_location}. "
+                        "This usually indicates the instance is behind Cloudflare Access or similar authentication."
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail=f"n8n instance returned redirect. The instance may be behind Cloudflare Access or require additional authentication. Redirect location: {redirect_location}"
+                    )
+                
                 response.raise_for_status()
                 result = response.json()
             
@@ -132,13 +146,27 @@ class WorkflowService:
             api_key = self.instance_service.get_decrypted_api_key(instance)
             
             # Call n8n API to toggle workflow
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(follow_redirects=False) as client:
                 response = await client.post(
                     f"{instance.url}/api/v1/workflows/{workflow_id}/activate",
                     headers={"X-N8N-API-KEY": api_key},
                     json={"active": enabled},
                     timeout=30.0
                 )
+                
+                # Check for redirects (e.g., Cloudflare Access)
+                if response.status_code in (301, 302, 303, 307, 308):
+                    from fastapi import HTTPException, status
+                    redirect_location = response.headers.get('Location', 'unknown')
+                    self.logger.warning(
+                        f"toggle_workflow: n8n instance returned redirect {response.status_code} to {redirect_location}. "
+                        "This usually indicates the instance is behind Cloudflare Access or similar authentication."
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail=f"n8n instance returned redirect. The instance may be behind Cloudflare Access or require additional authentication. Redirect location: {redirect_location}"
+                    )
+                
                 response.raise_for_status()
                 result = response.json()
             
@@ -224,13 +252,27 @@ class WorkflowService:
                 params["status"] = status
             
             # Call n8n API
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(follow_redirects=False) as client:
                 response = await client.get(
                     f"{instance.url}/api/v1/executions",
                     headers={"X-N8N-API-KEY": api_key},
                     params=params,
                     timeout=30.0
                 )
+                
+                # Check for redirects (e.g., Cloudflare Access)
+                if response.status_code in (301, 302, 303, 307, 308):
+                    from fastapi import HTTPException, status
+                    redirect_location = response.headers.get('Location', 'unknown')
+                    self.logger.warning(
+                        f"get_executions: n8n instance returned redirect {response.status_code} to {redirect_location}. "
+                        "This usually indicates the instance is behind Cloudflare Access or similar authentication."
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail=f"n8n instance returned redirect. The instance may be behind Cloudflare Access or require additional authentication. Redirect location: {redirect_location}"
+                    )
+                
                 response.raise_for_status()
                 result = response.json()
             
@@ -296,12 +338,26 @@ class WorkflowService:
             api_key = self.instance_service.get_decrypted_api_key(instance)
             
             # Call n8n API
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(follow_redirects=False) as client:
                 response = await client.get(
                     f"{instance.url}/api/v1/executions/{execution_id}",
                     headers={"X-N8N-API-KEY": api_key},
                     timeout=30.0
                 )
+                
+                # Check for redirects (e.g., Cloudflare Access)
+                if response.status_code in (301, 302, 303, 307, 308):
+                    from fastapi import HTTPException, status
+                    redirect_location = response.headers.get('Location', 'unknown')
+                    self.logger.warning(
+                        f"get_execution_by_id: n8n instance returned redirect {response.status_code} to {redirect_location}. "
+                        "This usually indicates the instance is behind Cloudflare Access or similar authentication."
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail=f"n8n instance returned redirect. The instance may be behind Cloudflare Access or require additional authentication. Redirect location: {redirect_location}"
+                    )
+                
                 response.raise_for_status()
                 result = response.json()
             
