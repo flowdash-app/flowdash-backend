@@ -29,8 +29,18 @@ class DeviceService:
         self.logger.info(f"register_device: Entry - user: {user_id}, device: {device_id}, platform: {platform}")
         
         try:
+            # Ensure parent user document exists (makes it visible in Firestore console)
+            user_ref = self.db.collection('users').document(user_id)
+            user_doc = user_ref.get()
+            if not user_doc.exists:
+                # Create user document with metadata
+                user_ref.set({
+                    'created_at': firestore.SERVER_TIMESTAMP,
+                    'last_device_registered_at': firestore.SERVER_TIMESTAMP,
+                }, merge=False)
+            
             # Reference to device document
-            device_ref = self.db.collection('users').document(user_id).collection('devices').document(device_id)
+            device_ref = user_ref.collection('devices').document(device_id)
             
             # Get current timestamp
             now = firestore.SERVER_TIMESTAMP
@@ -44,6 +54,10 @@ class DeviceService:
                     'fcm_token': fcm_token,
                     'last_used_at': now,
                 })
+                # Update user document timestamp
+                user_ref.update({
+                    'last_device_registered_at': now,
+                })
                 self.logger.info(f"register_device: Success (updated) - user: {user_id}, device: {device_id}")
             else:
                 # Create new device document
@@ -52,6 +66,10 @@ class DeviceService:
                     'platform': platform,
                     'created_at': now,
                     'last_used_at': now,
+                })
+                # Update user document timestamp
+                user_ref.update({
+                    'last_device_registered_at': now,
                 })
                 self.logger.info(f"register_device: Success (created) - user: {user_id}, device: {device_id}")
             
