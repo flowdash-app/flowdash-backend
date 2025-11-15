@@ -50,6 +50,17 @@ if command -v docker &> /dev/null && docker compose version &> /dev/null; then
     
     if [ $counter -lt $timeout ]; then
         echo -e "${GREEN}✓ PostgreSQL is ready${NC}"
+        
+        # Run database migrations
+        echo -e "${BLUE}Running database migrations...${NC}"
+        alembic upgrade head
+        
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✓ Migrations completed${NC}"
+        else
+            echo -e "${YELLOW}⚠ Warning: Migration failed${NC}"
+            echo "You may need to check your database connection or migration files."
+        fi
     fi
     echo ""
     

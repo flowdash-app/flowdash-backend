@@ -377,3 +377,4 @@ await fcm_service.send_error_notification(
 - ✅ **User-scoped**: Only sends to instance owner
 - ✅ **No secrets**: FCM tokens stored securely in Firestore
 
+

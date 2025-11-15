@@ -142,12 +142,12 @@ class WorkflowService:
         self.logger.info(f"toggle_workflow: Entry - user: {user_id}, workflow: {workflow_id}, enabled: {enabled}")
         
         try:
-            # Check quota
-            if not self.quota_service.check_quota(db, user_id, 'toggles', limit=100):
+            # Check quota (uses user's plan tier limit)
+            if not self.quota_service.check_quota(db, user_id, 'toggles'):
                 from fastapi import HTTPException, status
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail="Daily toggle quota exceeded"
+                    detail="Daily toggle quota exceeded. Upgrade your plan for more toggles."
                 )
             
             # Get instance and verify ownership
