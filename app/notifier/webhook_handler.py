@@ -1,71 +1,104 @@
-from fastapi import APIRouter, Request, HTTPException, Depends
+import logging
+from enum import Enum
+from typing import Optional, Dict, Any
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+
 from app.core.database import get_db
 from app.services.fcm_service import FCMService
 from app.services.instance_service import InstanceService
-import logging
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
+class Severity(str, Enum):
+    """Notification severity levels"""
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    CRITICAL = "critical"
+
+
+class N8NErrorRequest(BaseModel):
+    """Request model for n8n error webhook"""
+    executionId: str = Field(..., description="n8n execution ID")
+    workflowId: str = Field(..., description="n8n workflow ID")
+    instanceId: str = Field(..., description="FlowDash instance ID")
+    error: Optional[Dict[str, Any]] = Field(None, description="Error details from n8n")
+    workflowName: Optional[str] = Field(None, description="Human-readable workflow name")
+    severity: Severity = Field(Severity.ERROR, description="Notification severity level")
+
+    class Config:
+        populate_by_name = True  # Allow both camelCase and snake_case
+        use_enum_values = True  # Use enum values in JSON
+
+
 @router.post("/n8n-error")
 async def handle_n8n_error(
-    request: Request,
+    request: N8NErrorRequest,
     db: Session = Depends(get_db),
 ):
-    """Handle n8n error webhook and send FCM push notification"""
-    logger.info("handle_n8n_error: Entry")
+    """Handle n8n error webhook and send FCM push notification
+    
+    This endpoint receives error notifications from n8n workflows and sends
+    push notifications to the instance owner's registered devices.
+    """
+    logger.info(f"handle_n8n_error: Entry - execution: {request.executionId}")
     
     try:
-        body = await request.json()
-        
-        # Validate webhook payload
-        execution_id = body.get("executionId")
-        workflow_id = body.get("workflowId")
-        instance_id = body.get("instanceId")
-        error = body.get("error")
-        workflow_name = body.get("workflowName")  # Optional
-        
-        if not execution_id or not workflow_id or not instance_id:
-            raise HTTPException(status_code=400, detail="Missing required fields: executionId, workflowId, or instanceId")
-        
-        logger.info(f"handle_n8n_error: Processing - execution: {execution_id}, workflow: {workflow_id}, instance: {instance_id}")
-        
         # Get instance owner
         instance_service = InstanceService()
-        instance = instance_service.get_instance_by_id(db, instance_id)
+        instance = instance_service.get_instance_by_id(db, request.instanceId)
         
-        # Determine severity based on error type (can be customized based on error patterns)
-        error_message = error.get("message", "Unknown error") if error else "Workflow execution failed"
-        severity = "error"  # Default
+        if not instance:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Instance not found: {request.instanceId}"
+            )
         
-        # You can add logic here to determine severity based on error message patterns
-        # For example:
-        # if "critical" in error_message.lower() or "timeout" in error_message.lower():
-        #     severity = "critical"
-        # elif "warning" in error_message.lower():
-        #     severity = "warning"
+        # Extract error message
+        error_message = (
+            request.error.get("message", "Unknown error") 
+            if request.error 
+            else "Workflow execution failed"
+        )
         
-        # Send FCM notification
+        logger.info(
+            f"handle_n8n_error: Processing - "
+            f"workflow: {request.workflowId}, "
+            f"instance: {request.instanceId}, "
+            f"severity: {request.severity}"
+        )
+        
+        # Send FCM notification to all user devices
         fcm_service = FCMService()
         await fcm_service.send_error_notification(
             user_id=instance.user_id,
-            workflow_id=workflow_id,
-            execution_id=execution_id,
-            instance_id=instance_id,
+            workflow_id=request.workflowId,
+            execution_id=request.executionId,
+            instance_id=request.instanceId,
             error_message=error_message,
-            severity=severity,
-            workflow_name=workflow_name
+            severity=request.severity,
+            workflow_name=request.workflowName
         )
         
         logger.info(f"handle_n8n_error: Success - notification sent to user: {instance.user_id}")
-        return {"status": "success", "message": "Notification sent"}
+        return {
+            "status": "success",
+            "message": "Notification sent",
+            "user_id": instance.user_id,
+            "severity": request.severity
+        }
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"handle_n8n_error: Failure - {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
+        logger.error(f"handle_n8n_error: Failure - {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
