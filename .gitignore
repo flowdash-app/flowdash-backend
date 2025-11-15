@@ -81,3 +81,5 @@ dmypy.json
 # Docker
 .dockerignore
 
+!.devcontainer/devcontainer.json
+postgres_dev_data/

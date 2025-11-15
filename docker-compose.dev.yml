@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   postgres:
@@ -28,4 +28,3 @@ volumes:
 networks:
   flowdash_dev_network:
     driver: bridge
-

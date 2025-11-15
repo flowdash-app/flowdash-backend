@@ -42,6 +42,15 @@ class WorkflowService:
             
             # Get instance and verify ownership
             instance = self.instance_service.get_instance(db, instance_id, user_id)
+            
+            # Check if instance is enabled before fetching workflows
+            if not instance.enabled:
+                from fastapi import HTTPException, status
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Instance is disabled. Please enable the instance to fetch workflows."
+                )
+            
             api_key = self.instance_service.get_decrypted_api_key(instance)
             
             # Build query parameters
@@ -143,6 +152,15 @@ class WorkflowService:
             
             # Get instance and verify ownership
             instance = self.instance_service.get_instance(db, instance_id, user_id)
+            
+            # Check if instance is enabled before toggling workflows
+            if not instance.enabled:
+                from fastapi import HTTPException, status
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Instance is disabled. Please enable the instance to toggle workflows."
+                )
+            
             api_key = self.instance_service.get_decrypted_api_key(instance)
             
             # Call n8n API to toggle workflow
@@ -240,6 +258,15 @@ class WorkflowService:
             
             # Get instance and verify ownership
             instance = self.instance_service.get_instance(db, instance_id, user_id)
+            
+            # Check if instance is enabled before fetching executions
+            if not instance.enabled:
+                from fastapi import HTTPException, status
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Instance is disabled. Please enable the instance to fetch executions."
+                )
+            
             api_key = self.instance_service.get_decrypted_api_key(instance)
             
             # Build query parameters
@@ -344,6 +371,15 @@ class WorkflowService:
         try:
             # Get instance and verify ownership
             instance = self.instance_service.get_instance(db, instance_id, user_id)
+            
+            # Check if instance is enabled before fetching execution
+            if not instance.enabled:
+                from fastapi import HTTPException, status
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Instance is disabled. Please enable the instance to fetch execution details."
+                )
+            
             api_key = self.instance_service.get_decrypted_api_key(instance)
             
             # Call n8n API with includeData parameter
