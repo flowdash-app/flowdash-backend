@@ -574,39 +574,69 @@ decrypted = cipher.decrypt(encrypted).decode()
 
 ### Analytics Service
 
-All services MUST use `AnalyticsService` to log events to Firestore:
+All services MUST use `AnalyticsService` to log events and errors to Firebase via Admin SDK:
 
 ```python
 from app.services.analytics_service import AnalyticsService
 
 class AnalyticsService:
     def __init__(self):
-        self.db = firestore.client()
-        self.events_collection = 'analytics_events'
-        self.errors_collection = 'error_logs'
+        # Firebase Admin SDK
+        self.db = get_firestore_client()
+        self.analytics_collection = 'analytics_events'      # Firebase Analytics
+        self.crashlytics_collection = 'crashlytics_errors'  # Crashlytics-style error tracking
     
     def log_success(self, action: str, user_id: str = None, parameters: dict = None):
-        """Log successful action"""
-        # Logs to Firestore analytics_events collection
+        """Log successful action to Firebase Analytics"""
+        # Tracks successful operations for product analytics
+        # Stored in: analytics_events
     
-    def log_failure(self, action: str, error: str, user_id: str = None, parameters: dict = None):
-        """Log failed action"""
-        # Logs to both analytics_events and error_logs collections
+    def log_failure(self, action: str, error: str, user_id: str = None, parameters: dict = None, stack_trace: str = None):
+        """Log failed action to BOTH Analytics and Crashlytics"""
+        # 1. Tracks failure rate in analytics_events (product metrics)
+        # 2. Logs error to crashlytics_errors (error monitoring & debugging)
+    
+    def log_crash(self, error: str, action: str, user_id: str = None, parameters: dict = None, stack_trace: str = None, fatal: bool = False):
+        """Log error to Crashlytics-style error tracking"""
+        # Use for tracking exceptions and crashes
+        # Stored in: crashlytics_errors
 ```
 
-### Required Analytics Events
+### Purpose-Based Usage
 
-Every service method MUST log analytics:
+#### Firebase Analytics (Product Metrics)
+Use for tracking **user behavior** and **feature usage**:
+- Success rates of operations
+- Feature adoption
+- User flows and journeys
+- Performance metrics
+- Stored in: `analytics_events` Firestore collection
 
-1. **Success Events**: Log when operations complete successfully
+#### Crashlytics (Error Monitoring)
+Use for tracking **errors** and **debugging**:
+- Exception details and stack traces
+- Error frequency and patterns
+- Non-fatal errors (caught exceptions)
+- Fatal errors (crashes)
+- Stored in: `crashlytics_errors` Firestore collection
+
+### Required Events
+
+Every service method MUST log both analytics and errors:
+
+1. **Success Events** → Firebase Analytics
    - Format: `{action}_success`
    - Include: action name, user_id, relevant parameters
-   - Stored in: `analytics_events` Firestore collection
+   - Purpose: Track successful operations, feature usage
+   - Collection: `analytics_events`
 
-2. **Failure Events**: Log when operations fail
+2. **Failure Events** → BOTH Analytics + Crashlytics
    - Format: `{action}_failure`
-   - Include: action name, error message, user_id, relevant parameters
-   - Stored in: Both `analytics_events` and `error_logs` Firestore collections
+   - Include: action name, error message, user_id, parameters, stack_trace
+   - Purpose: 
+     - Analytics: Track failure rates for product metrics
+     - Crashlytics: Monitor errors for debugging
+   - Collections: `analytics_events` + `crashlytics_errors`
 
 ### Integration Pattern
 
@@ -649,27 +679,64 @@ class WorkflowService:
             raise
 ```
 
-### Firestore Collections
+### Firebase Collections
 
-#### analytics_events
+#### 1. analytics_events (Firebase Analytics)
 
-Stores all analytics events (success and failure):
+**Purpose**: Product analytics and user behavior tracking
 
-- `event_name`: String (e.g., "toggle_workflow_success")
-- `user_id`: String (Firebase UID)
-- `status`: String ("success" or "failure")
-- `parameters`: Map (action-specific data)
-- `timestamp`: Timestamp
+**Event Structure**:
+```json
+{
+  "event_name": "toggle_workflow_success",
+  "user_id": "firebase_uid",
+  "parameters": {
+    "status": "success",
+    "instance_id": "...",
+    "workflow_id": "..."
+  },
+  "timestamp": "2025-01-15T10:30:00Z"
+}
+```
 
-#### error_logs
+**Use for**:
+- Success/failure rates
+- Feature usage metrics
+- User journey tracking
+- Performance analytics
 
-Stores detailed error information:
+#### 2. crashlytics_errors (Crashlytics Error Tracking)
 
-- `action`: String (action that failed)
-- `user_id`: String (Firebase UID)
-- `error`: String (error message)
-- `parameters`: Map (context at time of error)
-- `timestamp`: Timestamp
+**Purpose**: Error monitoring and debugging
+
+**Error Structure**:
+```json
+{
+  "action": "toggle_workflow",
+  "user_id": "firebase_uid",
+  "error_message": "Connection timeout",
+  "stack_trace": "...",
+  "parameters": {
+    "instance_id": "...",
+    "workflow_id": "..."
+  },
+  "fatal": false,
+  "timestamp": "2025-01-15T10:30:00Z"
+}
+```
+
+**Use for**:
+- Error frequency and patterns
+- Stack traces for debugging
+- Non-fatal error tracking
+- Fatal crash tracking
+
+#### Viewing Data
+
+1. **Firebase Console**: Firestore Database → View both collections
+2. **BigQuery Export** (optional): Export for SQL queries and dashboards
+3. **Custom Monitoring**: Build alerts on error frequency
+4. **Unified View**: Correlate analytics events with errors
 
 ### User ID Tracking
 
@@ -688,7 +755,7 @@ Always include `user_id` in analytics events:
 
 ### Performance Considerations
 
-- Firestore writes are async - don't block on analytics
-- Batch writes when possible
-- Use Firestore offline persistence for reliability
-- Analytics failures should not break main functionality
+- Firestore writes are asynchronous - don't block on analytics
+- Analytics failures do not break main functionality
+- Failed analytics are logged but do not throw exceptions
+- Use Firebase Admin SDK which handles connection pooling and retries

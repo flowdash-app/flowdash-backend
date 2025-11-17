@@ -149,7 +149,41 @@ alembic downgrade -1
 
 ## Environment Variables
 
-See `.env.example` for all required environment variables.
+### Required Variables
+
+```bash
+# Database
+DATABASE_URL=postgresql://user:password@localhost/dbname
+
+# Firebase (Authentication & Analytics)
+FIREBASE_PROJECT_ID=your-project-id
+# Place your firebase-adminsdk-xxxxx.json file in project root
+
+# Encryption
+ENCRYPTION_KEY=your-encryption-key-here
+
+# API Configuration
+API_V1_STR=/api/v1
+```
+
+### Firebase Setup
+
+1. Go to [Firebase Console](https://console.firebase.google.com/)
+2. Select your project → Project Settings → Service Accounts
+3. Click "Generate New Private Key"
+4. Save the JSON file to project root (e.g., `flowdash-firebase-adminsdk.json`)
+5. Set `FIREBASE_PROJECT_ID` in `.env`
+
+### Analytics & Error Tracking
+
+Backend uses two Firestore collections:
+
+- **`analytics_events`**: Firebase Analytics for product metrics (success/failure rates, feature usage)
+- **`crashlytics_errors`**: Crashlytics-style error tracking (error details, stack traces, debugging)
+
+View both in Firebase Console → Firestore Database.
+
+See `.env.example` for all environment variables with descriptions.
 
 ## License
 

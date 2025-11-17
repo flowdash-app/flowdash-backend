@@ -157,3 +157,62 @@ async def get_execution_by_id(
         logger.error(f"get_execution_by_id: Failure - {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+class RetryExecutionRequest(BaseModel):
+    """Request model for retrying an execution - uses POST with body for secure instance_id handling"""
+    instance_id: str
+
+
+@router.post("/executions/{execution_id}/retry")
+async def retry_execution(
+    execution_id: str,
+    request: RetryExecutionRequest = Body(...),
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Retry a failed or canceled execution with the same input data.
+    
+    This endpoint:
+    - Validates the user owns the instance
+    - Fetches the original execution data
+    - Validates the execution is in a retryable state (error or canceled)
+    - Triggers a new execution with the same input data
+    - Returns the new execution ID
+    
+    **Requirements:**
+    - Execution must have status 'error', 'failed', or 'canceled'
+    - Instance must be enabled
+    - User must own the instance
+    
+    **Returns:**
+    - new_execution_id: ID of the newly triggered execution
+    - workflow_id: ID of the workflow that was executed
+    
+    **Error Responses:**
+    - 400: Execution cannot be retried (invalid status, missing data)
+    - 403: Instance is disabled or user doesn't own instance
+    - 404: Execution or workflow not found
+    - 502: n8n API error (redirect, connection error)
+    - 504: Request timeout
+    """
+    instance_id = request.instance_id
+    
+    logger.info(f"retry_execution: Entry - user: {current_user['uid']}, execution: {execution_id}, instance: {instance_id}")
+    
+    try:
+        service = WorkflowService()
+        result = await service.retry_execution(
+            db,
+            instance_id,
+            execution_id,
+            user_id=current_user['uid']
+        )
+        logger.info(f"retry_execution: Success - execution: {execution_id}, new_execution: {result['new_execution_id']}")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"retry_execution: Failure - {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
