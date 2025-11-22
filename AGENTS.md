@@ -605,7 +605,9 @@ class AnalyticsService:
 ### Purpose-Based Usage
 
 #### Firebase Analytics (Product Metrics)
+
 Use for tracking **user behavior** and **feature usage**:
+
 - Success rates of operations
 - Feature adoption
 - User flows and journeys
@@ -613,7 +615,9 @@ Use for tracking **user behavior** and **feature usage**:
 - Stored in: `analytics_events` Firestore collection
 
 #### Crashlytics (Error Monitoring)
+
 Use for tracking **errors** and **debugging**:
+
 - Exception details and stack traces
 - Error frequency and patterns
 - Non-fatal errors (caught exceptions)
@@ -633,7 +637,7 @@ Every service method MUST log both analytics and errors:
 2. **Failure Events** → BOTH Analytics + Crashlytics
    - Format: `{action}_failure`
    - Include: action name, error message, user_id, parameters, stack_trace
-   - Purpose: 
+   - Purpose:
      - Analytics: Track failure rates for product metrics
      - Crashlytics: Monitor errors for debugging
    - Collections: `analytics_events` + `crashlytics_errors`
@@ -686,6 +690,7 @@ class WorkflowService:
 **Purpose**: Product analytics and user behavior tracking
 
 **Event Structure**:
+
 ```json
 {
   "event_name": "toggle_workflow_success",
@@ -700,6 +705,7 @@ class WorkflowService:
 ```
 
 **Use for**:
+
 - Success/failure rates
 - Feature usage metrics
 - User journey tracking
@@ -710,6 +716,7 @@ class WorkflowService:
 **Purpose**: Error monitoring and debugging
 
 **Error Structure**:
+
 ```json
 {
   "action": "toggle_workflow",
@@ -726,6 +733,7 @@ class WorkflowService:
 ```
 
 **Use for**:
+
 - Error frequency and patterns
 - Stack traces for debugging
 - Non-fatal error tracking
@@ -759,3 +767,9 @@ Always include `user_id` in analytics events:
 - Analytics failures do not break main functionality
 - Failed analytics are logged but do not throw exceptions
 - Use Firebase Admin SDK which handles connection pooling and retries
+
+## N8N API documentation
+
+I have downloaded the n8n api documentation from the n8n website and stored it in the docs folder.
+
+You can find the documentation [in this file](docs/n8n-api.yaml).
