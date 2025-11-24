@@ -23,10 +23,12 @@ services:
     image: redis:7-alpine
     container_name: flowdash_redis_prod
     command: redis-server --requirepass ${REDIS_PASSWORD}
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     volumes:
       - redis_prod_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      test: ["CMD-SHELL", "redis-cli -h 127.0.0.1 -p 6379 -a '${REDIS_PASSWORD}' ping || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -40,6 +42,7 @@ services:
       dockerfile: Dockerfile
     container_name: flowdash_api_prod
     environment:
+      # Ensure REDIS_URL and password are passed into the app
       DATABASE_URL: postgresql://${POSTGRES_USER:-flowdash}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-flowdash_db}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/${REDIS_DB:-0}
       REDIS_PASSWORD: ${REDIS_PASSWORD}

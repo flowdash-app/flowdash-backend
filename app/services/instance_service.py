@@ -144,8 +144,8 @@ class InstanceService:
                 
                 # Check rate limit for free users (max 1 creation per day)
                 if user.plan_tier == 'free':
-                if not self._check_instance_creation_rate_limit(user_id):
-                    raise HTTPException(
+                    if not self._check_instance_creation_rate_limit(user_id):
+                        raise HTTPException(
                         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                         detail="Free users can create 1 instance per day. Please try again tomorrow or upgrade your plan."
                     )
