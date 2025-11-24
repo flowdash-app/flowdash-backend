@@ -44,7 +44,9 @@ services:
     environment:
       # Ensure REDIS_URL and password are passed into the app
       DATABASE_URL: postgresql://${POSTGRES_USER:-flowdash}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-flowdash_db}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/${REDIS_DB:-0}
+      REDIS_URL: "redis://${REDIS_HOST:-redis}:${REDIS_PORT:-6379}/${REDIS_DB:-0}"
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       REDIS_DB: ${REDIS_DB:-0}
       FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}

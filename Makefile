@@ -15,3 +15,5 @@ docker-push: ## Push existing Docker image (requires manual tagging first)
 	@echo "Usage: docker push <image:tag>"
 	@echo "Example: docker push ghcr.io/owner/flowdash-backend:0.0.1"
 
+run-prod: ## Run production Docker container
+	@docker compose -f docker-compose.prod.yml up -d --build
