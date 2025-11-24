@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.middleware import get_current_user
+from app.models.user import User
 from app.services.quota_service import QuotaService
 from app.services.subscription_service import SubscriptionService
 
@@ -230,9 +231,27 @@ async def get_quota_status(
     Requires authentication.
     """
     user_id = current_user['uid']
+    user_email = current_user.get('email', '')
     logger.info(f"get_quota_status: Entry - user: {user_id}")
 
     try:
+        # Ensure user exists in database (create if first-time authentication)
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            user = User(
+                id=user_id,
+                email=user_email or "",
+                plan_tier='free',
+                is_active=True
+            )
+            db.add(user)
+            db.commit()
+            logger.info(f"get_quota_status: Created new user - user: {user_id}")
+        elif user_email and user.email != user_email:
+            # Update email if it changed
+            user.email = user_email
+            db.commit()
+        
         quota_status = quota_service.get_quota_status(db, user_id)
         logger.info(f"get_quota_status: Success - user: {user_id}")
         return quota_status
