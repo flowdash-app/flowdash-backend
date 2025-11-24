@@ -85,7 +85,7 @@ async def create_workflow_in_n8n(
     7. Returns workflow details
     
     **Requirements:**
-    - Pro, Business, or Enterprise plan (push notifications feature)
+    - Pro plan (push notifications feature) or tester
     - Valid n8n instance connected to FlowDash
     - n8n API key stored and accessible
     - n8n instance must be online and accessible

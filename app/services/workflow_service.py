@@ -314,7 +314,7 @@ class WorkflowService:
             # Remove None values
             params = {k: v for k, v in params.items() if v is not None}
 
-            # Check cache (unless business plan or refresh requested)
+            # Check cache (unless tester or refresh requested)
             if should_use_cache:
                 cached = get_cached_executions(instance_id, params)
                 if cached:

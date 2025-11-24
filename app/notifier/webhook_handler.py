@@ -57,7 +57,7 @@ async def handle_n8n_error(
     Requires:
     - Valid instance ID
     - Instance must be enabled
-    - User must have Pro/Business plan (or be a tester) for push notifications
+    - User must have Pro plan (or be a tester) for push notifications
     """
     logger.info(f"handle_n8n_error: Entry - execution: {request.executionId}, instance: {request.instanceId}")
     analytics = AnalyticsService()
@@ -325,12 +325,12 @@ async def test_error_notification(
 ):
     """Test error notification endpoint for manual testing
     
-    This endpoint allows Pro/Business/Enterprise users to manually test
+    This endpoint allows Pro users (or testers) to manually test
     error notifications without triggering actual workflow errors in n8n.
     
     **Plan Restrictions:**
     - Free tier: Blocked (push notifications not available)
-    - Pro/Business/Enterprise: Allowed
+    - Pro (or tester): Allowed
     - Testers: Allowed
     
     **Usage:**

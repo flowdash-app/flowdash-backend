@@ -7,7 +7,7 @@ Create Date: 2025-01-15 12:00:00.000000
 """
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import JSON
+from sqlalchemy.dialects.postgresql import JSONB
 from datetime import datetime
 
 
@@ -25,8 +25,8 @@ def upgrade():
         sa.Column('name', sa.String(), nullable=False),
         sa.Column('price_monthly', sa.Numeric(10, 2), nullable=False),
         sa.Column('price_yearly', sa.Numeric(10, 2), nullable=False),
-        sa.Column('limits', JSON, nullable=False),
-        sa.Column('features', JSON, nullable=False),
+        sa.Column('limits', JSONB, nullable=False),
+        sa.Column('features', JSONB, nullable=False),
         sa.Column('active', sa.Boolean(), nullable=False, server_default='true'),
         sa.Column('recommended', sa.Boolean(), nullable=False, server_default='false'),
         sa.Column('created_at', sa.DateTime(), nullable=True, server_default=sa.text('now()')),

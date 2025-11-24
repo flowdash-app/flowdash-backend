@@ -101,6 +101,9 @@ class SubscriptionService:
         self.logger.info("get_all_plans: Entry")
 
         try:
+            # Seed plans if table is empty
+            self._seed_plans_if_empty(db)
+
             # Query active plans from database
             plans_db = db.query(Plan).filter(
                 Plan.active == True).order_by(Plan.price_monthly).all()
@@ -128,6 +131,78 @@ class SubscriptionService:
             )
             self.logger.error(f"get_all_plans: Failure - {e}")
             raise
+
+    def _seed_plans_if_empty(self, db: Session):
+        """Seed plans table if empty (for initial setup or if migration didn't run)"""
+        try:
+            plan_count = db.query(Plan).count()
+            if plan_count == 0:
+                self.logger.info(
+                    "_seed_plans_if_empty: Plans table is empty, seeding plans")
+
+                # Free plan
+                free_plan = Plan(
+                    tier='free',
+                    name='Free',
+                    price_monthly=0.00,
+                    price_yearly=0.00,
+                    limits={
+                        'toggles_per_day': 0,
+                        'refreshes_per_day': 5,
+                        'error_views_per_day': 3,
+                        'triggers': 1,
+                        'max_instances': 1,
+                        'push_notifications': False,
+                        'cache_ttl_minutes': 30
+                    },
+                    features=[
+                        'Read-only monitoring',
+                        '5 list refreshes per day',
+                        '3 detailed error views per day',
+                        '1 simple mobile trigger',
+                        '1 n8n instance',
+                        '30-minute data cache',
+                    ],
+                    active=True,
+                    recommended=False
+                )
+                db.add(free_plan)
+
+                # Pro plan
+                pro_plan = Plan(
+                    tier='pro',
+                    name='Pro',
+                    price_monthly=19.99,
+                    price_yearly=199.99,
+                    limits={
+                        'toggles_per_day': 100,
+                        'refreshes_per_day': 200,
+                        'error_views_per_day': -1,
+                        'triggers': 10,
+                        'max_instances': 5,
+                        'push_notifications': True,
+                        'cache_ttl_minutes': 3
+                    },
+                    features=[
+                        'Instant push notifications',
+                        '100 workflow toggles per day',
+                        '200 list refreshes per day',
+                        'Unlimited detailed error views',
+                        '10 custom triggers with forms',
+                        'Up to 5 n8n instances',
+                    ],
+                    active=True,
+                    recommended=True
+                )
+                db.add(pro_plan)
+
+                db.commit()
+                self.logger.info(
+                    "_seed_plans_if_empty: Success - seeded free and pro plans")
+        except Exception as e:
+            db.rollback()
+            self.logger.error(f"_seed_plans_if_empty: Failure - {e}")
+            # Don't raise - allow API to continue even if seeding fails
 
     def get_current_subscription(self, db: Session, user_id: str) -> dict:
         """Get user's current subscription"""

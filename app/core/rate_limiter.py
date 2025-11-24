@@ -24,10 +24,6 @@ RATE_LIMITS = {
     'pro': {
         'per_minute': 120,
         'per_hour': 5000,
-    },
-    'business': {
-        'per_minute': 300,
-        'per_hour': -1,  # unlimited
     }
 }
 
