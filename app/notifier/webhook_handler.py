@@ -115,8 +115,8 @@ async def handle_n8n_error(
             )
 
         # Check plan allows push notifications
-        effective_plan = 'business' if user.is_tester else user.plan_tier
-        plan_config = PlanConfiguration.get_plan(effective_plan)
+        # Testers get unlimited access (handled in quota checks)
+        plan_config = PlanConfiguration.get_plan(db, user.plan_tier)
 
         if not plan_config['push_notifications']:
             analytics.log_failure(
@@ -359,8 +359,8 @@ async def test_error_notification(
             )
 
         # Check plan allows push notifications (only Pro+ can test)
-        effective_plan = 'business' if user.is_tester else user.plan_tier
-        plan_config = PlanConfiguration.get_plan(effective_plan)
+        # Testers get unlimited access (handled in quota checks)
+        plan_config = PlanConfiguration.get_plan(db, user.plan_tier)
 
         if not plan_config['push_notifications']:
             analytics.log_failure(

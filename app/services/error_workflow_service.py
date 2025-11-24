@@ -259,8 +259,8 @@ class ErrorWorkflowService:
                 )
             
             # Check plan allows push notifications (and thus error workflows)
-            effective_plan = 'business' if user.is_tester else user.plan_tier
-            plan_config = PlanConfiguration.get_plan(effective_plan)
+            # Testers get unlimited access (handled in quota checks)
+            plan_config = PlanConfiguration.get_plan(db, user.plan_tier)
             
             if not plan_config['push_notifications']:
                 self.analytics.log_failure(

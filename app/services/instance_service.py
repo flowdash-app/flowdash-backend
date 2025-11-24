@@ -3,6 +3,9 @@ from app.models.n8n_instance import N8NInstance
 from app.models.user import User
 from app.core.security import encrypt_api_key, decrypt_api_key
 from app.services.analytics_service import AnalyticsService
+from app.services.subscription_service import PlanConfiguration
+from app.core.cache import get_cache
+from datetime import datetime
 from fastapi import HTTPException, status
 import uuid
 import logging
@@ -123,6 +126,30 @@ class InstanceService:
                 db.add(user)
                 db.flush()
             
+            # Testers get unlimited instances
+            if not user.is_tester:
+                # Check instance limit based on plan
+                existing_instances = db.query(N8NInstance).filter(
+                    N8NInstance.user_id == user_id
+                ).count()
+                
+                plan_config = PlanConfiguration.get_plan(db, user.plan_tier)
+                max_instances = plan_config.get('max_instances', 1)
+                
+                if max_instances != -1 and existing_instances >= max_instances:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"Instance limit reached. Your {plan_config['name']} plan allows {max_instances} instance(s). Upgrade to add more instances."
+                    )
+                
+                # Check rate limit for free users (max 1 creation per day)
+                if user.plan_tier == 'free':
+                if not self._check_instance_creation_rate_limit(user_id):
+                    raise HTTPException(
+                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                        detail="Free users can create 1 instance per day. Please try again tomorrow or upgrade your plan."
+                    )
+            
             # Encrypt API key
             encrypted_key = encrypt_api_key(api_key)
             
@@ -138,6 +165,10 @@ class InstanceService:
             db.add(instance)
             db.commit()
             db.refresh(instance)
+            
+            # Increment instance creation count for free users
+            if user.plan_tier == 'free':
+                self._increment_instance_creation_count(user_id)
             
             self.analytics.log_success(
                 action='create_instance',
@@ -232,6 +263,37 @@ class InstanceService:
             )
             self.logger.error(f"delete_instance: Failure - {e}")
             raise
+    
+    def _check_instance_creation_rate_limit(self, user_id: str) -> bool:
+        """Check if free user can create instance (max 1 per day)."""
+        cache = get_cache()
+        today = datetime.utcnow().date().isoformat()
+        cache_key = f"instance_creation:{user_id}:{today}"
+        
+        cached_count = cache.get(cache_key)
+        if cached_count is None:
+            cached_count = 0
+        
+        # Free users: max 1 creation per day
+        if cached_count >= 1:
+            return False
+        
+        # Increment count (will be set when instance is successfully created)
+        return True
+    
+    def _increment_instance_creation_count(self, user_id: str):
+        """Increment instance creation count for rate limiting."""
+        cache = get_cache()
+        today = datetime.utcnow().date().isoformat()
+        cache_key = f"instance_creation:{user_id}:{today}"
+        
+        cached_count = cache.get(cache_key)
+        if cached_count is None:
+            cached_count = 0
+        
+        # Store for 24 hours (until end of day)
+        hours_until_midnight = 24 - datetime.utcnow().hour
+        cache.set(cache_key, cached_count + 1, ttl_minutes=hours_until_midnight * 60)
     
     def get_decrypted_api_key(self, instance: N8NInstance) -> str:
         """Get decrypted API key for an instance"""

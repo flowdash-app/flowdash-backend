@@ -29,11 +29,14 @@ async def get_current_user(
             )
         
         logger.info(f"get_current_user: Success - {user_id}")
-        return {
+        user_dict = {
             'uid': user_id,
             'email': decoded_token.get('email'),
             'token': decoded_token
         }
+        # Store user_id in request state for rate limiting (if request is available)
+        # This will be set by FastAPI's dependency injection
+        return user_dict
     except Exception as e:
         logger.error(f"get_current_user: Failure - {e}")
         raise HTTPException(

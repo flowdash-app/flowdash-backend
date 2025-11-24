@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from app.core.config import settings
 from app.core.firebase import init_firebase
 from app.core.database import engine, Base
+from app.core.rate_limit_middleware import RateLimitMiddleware
 from app.api.v1.router import api_router
 import logging
 import os
@@ -37,6 +38,9 @@ app = FastAPI(
     debug=settings.debug,
     redirect_slashes=False,
 )
+
+# Add rate limiting middleware (applies to all requests)
+app.add_middleware(RateLimitMiddleware)
 
 # Include routers
 app.include_router(api_router, prefix=settings.api_v1_str)

@@ -6,6 +6,11 @@ class Settings(BaseSettings):
     # Database
     database_url: str
     
+    # Redis
+    redis_url: str = "redis://localhost:6379/0"
+    redis_password: Optional[str] = None
+    redis_db: int = 0
+    
     # Firebase
     firebase_project_id: str
     firebase_credentials_path: str

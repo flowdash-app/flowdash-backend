@@ -4,7 +4,8 @@ from app.models.quota import Quota
 from app.models.user import User
 from app.services.analytics_service import AnalyticsService
 from app.services.subscription_service import PlanConfiguration
-from datetime import date
+from app.core.cache import get_cache
+from datetime import date, datetime
 import uuid
 import logging
 
@@ -53,12 +54,20 @@ class QuotaService:
                 if not plan_limit_key:
                     raise ValueError(f"Unknown quota type: {quota_type}")
                 
-                limit = PlanConfiguration.get_limit(user.plan_tier, plan_limit_key)
+                limit = PlanConfiguration.get_limit(db, user.plan_tier, plan_limit_key)
             
             # If limit is -1, it's unlimited for this plan
             if limit == -1:
                 self.logger.info(f"check_quota: Unlimited - user: {user_id}, type: {quota_type}, plan: {user.plan_tier}")
                 return True
+            
+            # Check hourly sub-limits for free users (prevent burst abuse)
+            if user.plan_tier == 'free':
+                hourly_limit = self._get_hourly_sub_limit(quota_type, limit)
+                if hourly_limit > 0:
+                    if not self._check_hourly_quota(user_id, quota_type, hourly_limit):
+                        self.logger.info(f"check_quota: Hourly sub-limit exceeded - user: {user_id}, type: {quota_type}")
+                        return False
             
             today = date.today()
             quota = db.query(Quota).filter(
@@ -107,7 +116,7 @@ class QuotaService:
                 raise ValueError("User not found")
             
             today = date.today()
-            plan_config = PlanConfiguration.get_plan(user.plan_tier)
+            plan_config = PlanConfiguration.get_plan(db, user.plan_tier)
             
             result = {
                 'plan_tier': user.plan_tier,
@@ -183,6 +192,11 @@ class QuotaService:
             else:
                 quota.count += 1
             
+            # Increment hourly quota for free users
+            user = db.query(User).filter(User.id == user_id).first()
+            if user and user.plan_tier == 'free':
+                self._increment_hourly_quota(user_id, quota_type)
+            
             db.commit()
             
             self.analytics.log_success(
@@ -201,4 +215,45 @@ class QuotaService:
             )
             self.logger.error(f"increment_quota: Failure - {e}")
             raise
+    
+    def _get_hourly_sub_limit(self, quota_type: str, daily_limit: int) -> int:
+        """Get hourly sub-limit for free users to prevent burst abuse."""
+        # For free users: enforce hourly sub-limits
+        # 0 toggles/day = no hourly limit needed (read-only)
+        # 5 refreshes/day = max 2 refreshes/hour
+        # 3 error views/day = max 1 error view/hour
+        hourly_limits = {
+            'toggles': 0,  # Read-only, no hourly limit
+            'refreshes': 2,  # Max 2 per hour
+            'error_views': 1,  # Max 1 per hour
+        }
+        return hourly_limits.get(quota_type, 0)
+    
+    def _check_hourly_quota(self, user_id: str, quota_type: str, hourly_limit: int) -> bool:
+        """Check if user is within hourly quota limit using cache."""
+        cache = get_cache()
+        current_hour = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+        cache_key = f"quota_hourly:{user_id}:{quota_type}:{current_hour.isoformat()}"
+        
+        cached_count = cache.get(cache_key)
+        if cached_count is None:
+            cached_count = 0
+        
+        if cached_count >= hourly_limit:
+            return False
+        
+        return True
+    
+    def _increment_hourly_quota(self, user_id: str, quota_type: str):
+        """Increment hourly quota count in cache."""
+        cache = get_cache()
+        current_hour = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+        cache_key = f"quota_hourly:{user_id}:{quota_type}:{current_hour.isoformat()}"
+        
+        cached_count = cache.get(cache_key)
+        if cached_count is None:
+            cached_count = 0
+        
+        # Increment and store for 1 hour
+        cache.set(cache_key, cached_count + 1, ttl_minutes=60)
 

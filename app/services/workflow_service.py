@@ -5,7 +5,9 @@ import uuid
 import httpx
 from sqlalchemy.orm import Session
 
+from app.core.cache import get_cached_executions, set_cached_executions
 from app.models.audit_log import AuditLog
+from app.models.user import User
 from app.services.analytics_service import AnalyticsService
 from app.services.instance_service import InstanceService
 from app.services.quota_service import QuotaService
@@ -42,6 +44,14 @@ class WorkflowService:
                 limit = 250
             elif limit < 1:
                 limit = 100
+
+            # Check quota for refreshes
+            if not self.quota_service.check_quota(db, user_id, 'refreshes'):
+                from fastapi import HTTPException, status
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Daily refresh quota exceeded. Upgrade your plan for more refreshes."
+                )
 
             # Get instance and verify ownership
             instance = self.instance_service.get_instance(
@@ -101,6 +111,9 @@ class WorkflowService:
                 workflows_data = result.get("data", [])
                 next_cursor = result.get("nextCursor")
 
+            # Increment quota for refresh
+            self.quota_service.increment_quota(db, user_id, 'refreshes')
+
             self.analytics.log_success(
                 action='get_workflows',
                 user_id=user_id,
@@ -149,6 +162,18 @@ class WorkflowService:
             f"toggle_workflow: Entry - user: {user_id}, workflow: {workflow_id}, enabled: {enabled}")
 
         try:
+            # Check if user is on free plan (read-only mode)
+            user = db.query(User).filter(User.id == user_id).first()
+            if not user:
+                raise ValueError("User not found")
+
+            if user.plan_tier == 'free':
+                from fastapi import HTTPException, status
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Free plan is read-only. Upgrade to Pro to control workflows."
+                )
+
             # Check quota (uses user's plan tier limit)
             if not self.quota_service.check_quota(db, user_id, 'toggles'):
                 from fastapi import HTTPException, status
@@ -252,14 +277,15 @@ class WorkflowService:
         workflow_id: str | None = None,
         limit: int = 20,
         cursor: str | None = None,
-        status: str | None = None
+        status: str | None = None,
+        refresh: bool = False
     ) -> dict:
         """
         Get executions from n8n instance with pagination support.
         Returns: {data: list[dict], nextCursor: str | None}
         """
         self.logger.info(
-            f"get_executions: Entry - instance: {instance_id}, user: {user_id}, workflow_id: {workflow_id}, limit: {limit}, cursor: {cursor}, status: {status}")
+            f"get_executions: Entry - instance: {instance_id}, user: {user_id}, workflow_id: {workflow_id}, limit: {limit}, cursor: {cursor}, status: {status}, refresh: {refresh}")
 
         try:
             # Validate limit (n8n API max is 250, default is 20)
@@ -267,6 +293,42 @@ class WorkflowService:
                 limit = 250
             elif limit < 1:
                 limit = 20
+
+            # Get user plan to determine caching strategy
+            user = db.query(User).filter(User.id == user_id).first()
+            if not user:
+                raise ValueError("User not found")
+
+            user_plan = user.plan_tier
+            # Testers get real-time data (no caching)
+            # Pro plan uses cache, free plan uses longer cache
+            should_use_cache = not user.is_tester and not refresh
+
+            # Build params dict for cache key
+            params = {
+                "limit": limit,
+                "workflowId": workflow_id,
+                "cursor": cursor,
+                "status": status
+            }
+            # Remove None values
+            params = {k: v for k, v in params.items() if v is not None}
+
+            # Check cache (unless business plan or refresh requested)
+            if should_use_cache:
+                cached = get_cached_executions(instance_id, params)
+                if cached:
+                    self.logger.info(
+                        f"get_executions: Cache hit - instance: {instance_id}, plan: {user_plan}")
+                    return cached
+
+            # Check quota for refreshes
+            if not self.quota_service.check_quota(db, user_id, 'refreshes'):
+                from fastapi import HTTPException, status
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Daily refresh quota exceeded. Upgrade your plan for more refreshes."
+                )
 
             # Get instance and verify ownership
             instance = self.instance_service.get_instance(
@@ -328,6 +390,24 @@ class WorkflowService:
                 executions_data = result.get("data", [])
                 next_cursor = result.get("nextCursor")
 
+            # Increment quota for refresh
+            self.quota_service.increment_quota(db, user_id, 'refreshes')
+
+            result = {
+                "data": executions_data,
+                "nextCursor": next_cursor
+            }
+
+            # Cache the response (skip for testers - they get real-time data)
+            if not user.is_tester:
+                ttl = self._get_cache_ttl(user_plan)
+                set_cached_executions(instance_id, params, result, ttl)
+                self.logger.info(
+                    f"get_executions: Cached response - instance: {instance_id}, plan: {user_plan}, ttl: {ttl}min")
+            else:
+                self.logger.info(
+                    f"get_executions: Skipped cache (tester) - instance: {instance_id}")
+
             self.analytics.log_success(
                 action='get_executions',
                 user_id=user_id,
@@ -335,16 +415,14 @@ class WorkflowService:
                     'instance_id': instance_id,
                     'workflow_id': workflow_id,
                     'execution_count': len(executions_data),
-                    'has_next': next_cursor is not None
+                    'has_next': next_cursor is not None,
+                    'cached': should_use_cache and cached is not None if 'cached' in locals() else False
                 }
             )
             self.logger.info(
                 f"get_executions: Success - instance: {instance_id}, count: {len(executions_data)}, has_next: {next_cursor is not None}")
 
-            return {
-                "data": executions_data,
-                "nextCursor": next_cursor
-            }
+            return result
         except httpx.HTTPError as e:
             self.analytics.log_failure(
                 action='get_executions',
@@ -387,6 +465,15 @@ class WorkflowService:
             f"get_execution_by_id: Entry - instance: {instance_id}, execution: {execution_id}, user: {user_id}, include_data: {include_data}")
 
         try:
+            # Check quota for error views (only when include_data is True)
+            if include_data:
+                if not self.quota_service.check_quota(db, user_id, 'error_views'):
+                    from fastapi import HTTPException, status
+                    raise HTTPException(
+                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                        detail="Daily error view quota exceeded. Upgrade your plan for more detailed error views."
+                    )
+
             # Get instance and verify ownership
             instance = self.instance_service.get_instance(
                 db, instance_id, user_id)
@@ -427,12 +514,17 @@ class WorkflowService:
                 response.raise_for_status()
                 result = response.json()
 
+            # Increment quota for error view (only when include_data is True)
+            if include_data:
+                self.quota_service.increment_quota(db, user_id, 'error_views')
+
             self.analytics.log_success(
                 action='get_execution_by_id',
                 user_id=user_id,
                 parameters={
                     'instance_id': instance_id,
                     'execution_id': execution_id,
+                    'include_data': include_data,
                 }
             )
             self.logger.info(
@@ -743,3 +835,11 @@ class WorkflowService:
             )
             self.logger.error(f"retry_execution: Failure - {e}")
             raise
+
+    def _get_cache_ttl(self, user_plan: str) -> int:
+        """Get cache TTL in minutes based on user plan."""
+        ttl_map = {
+            'free': 30,  # 30 minutes for free tier (reduces API load)
+            'pro': 3,    # 3 minutes for pro tier
+        }
+        return ttl_map.get(user_plan, 30)  # Default to free tier

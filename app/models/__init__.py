@@ -4,6 +4,7 @@ from app.models.quota import Quota
 from app.models.audit_log import AuditLog
 from app.models.subscription import Subscription, SubscriptionStatus, BillingPeriod, Platform
 from app.models.subscription_history import SubscriptionHistory
+from app.models.plan import Plan
 
-__all__ = ["User", "N8NInstance", "Quota", "AuditLog", "Subscription", "SubscriptionStatus", "BillingPeriod", "Platform", "SubscriptionHistory"]
+__all__ = ["User", "N8NInstance", "Quota", "AuditLog", "Subscription", "SubscriptionStatus", "BillingPeriod", "Platform", "SubscriptionHistory", "Plan"]
 

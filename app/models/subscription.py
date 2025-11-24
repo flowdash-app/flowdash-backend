@@ -27,7 +27,7 @@ class Subscription(Base):
     
     id = Column(String, primary_key=True, index=True)
     user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
-    plan_tier = Column(String, nullable=False, index=True)  # 'free', 'pro', 'business'
+    plan_tier = Column(String, nullable=False, index=True)  # 'free', 'pro'
     status = Column(Enum(SubscriptionStatus), nullable=False, default=SubscriptionStatus.PENDING, index=True)
     billing_period = Column(Enum(BillingPeriod), nullable=True)  # null for free tier
     platform = Column(Enum(Platform), nullable=True)  # null for free tier

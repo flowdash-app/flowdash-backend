@@ -9,7 +9,7 @@ class User(Base):
     
     id = Column(String, primary_key=True, index=True)  # Firebase UID
     email = Column(String, unique=True, index=True, nullable=False)
-    plan_tier = Column(String, nullable=False, default='free', index=True)  # 'free', 'pro', 'business'
+    plan_tier = Column(String, nullable=False, default='free', index=True)  # 'free', 'pro'
     is_tester = Column(Boolean, default=False, nullable=False)  # Testers get pro-level access without subscription
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
