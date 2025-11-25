@@ -167,7 +167,7 @@ class WorkflowService:
             if not user:
                 raise ValueError("User not found")
 
-            if user.plan_tier == 'free':
+            if user.plan_tier == 'free' and not user.is_tester:
                 from fastapi import HTTPException, status
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
