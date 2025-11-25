@@ -17,6 +17,15 @@ class FCMNotificationData(BaseModel):
         default=None,
         description="Human-readable workflow name"
     )
+    # Title and body for data-only notifications (app will display these)
+    title: Optional[str] = Field(
+        default=None,
+        description="Notification title (for data-only notifications)"
+    )
+    body: Optional[str] = Field(
+        default=None,
+        description="Notification body (for data-only notifications)"
+    )
     
     class Config:
         json_schema_extra = {
@@ -49,9 +58,9 @@ class FCMNotificationPayload(BaseModel):
 class FCMAndroidConfig(BaseModel):
     """Android-specific FCM configuration"""
     priority: Literal["normal", "high"] = Field(default="high")
-    notification: Dict[str, str] = Field(
-        default={"channel_id": "workflow_errors"},
-        description="Android notification channel configuration"
+    notification: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Android notification channel configuration (only for notification messages)"
     )
 
 
@@ -75,7 +84,10 @@ class FCMApnsConfig(BaseModel):
 class FCMMessage(BaseModel):
     """Complete FCM message structure"""
     token: str = Field(description="FCM device token")
-    notification: FCMNotificationPayload
+    notification: Optional[FCMNotificationPayload] = Field(
+        default=None,
+        description="Notification payload (optional - use None for data-only notifications)"
+    )
     data: Dict[str, str] = Field(description="Custom data payload as string key-value pairs")
     android: FCMAndroidConfig = Field(default_factory=FCMAndroidConfig)
     apns: FCMApnsConfig = Field(default_factory=FCMApnsConfig)

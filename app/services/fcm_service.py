@@ -101,18 +101,7 @@ class FCMService:
                 self.logger.warning(f"send_error_notification: No FCM tokens for user: {user_id}")
                 return
             
-            # Create notification data payload
-            notification_data = FCMNotificationData(
-                type="workflow_error",
-                workflow_id=workflow_id,
-                execution_id=execution_id,
-                instance_id=instance_id,
-                error_message=error_message,
-                severity=severity,
-                workflow_name=workflow_name
-            )
-            
-            # Create notification payload
+            # Create notification title and body for data payload
             notification_title = "n8n Workflow Error"
             if severity == "critical":
                 notification_title = "🚨 Critical Workflow Error"
@@ -122,7 +111,16 @@ class FCMService:
             workflow_display = workflow_name if workflow_name else workflow_id
             notification_body = f"Workflow {workflow_display} failed: {error_message[:100]}"
             
-            notification_payload = FCMNotificationPayload(
+            # Create notification data payload (data-only notification)
+            # Include title and body in data so app can display them
+            notification_data = FCMNotificationData(
+                type="workflow_error",
+                workflow_id=workflow_id,
+                execution_id=execution_id,
+                instance_id=instance_id,
+                error_message=error_message,
+                severity=severity,
+                workflow_name=workflow_name,
                 title=notification_title,
                 body=notification_body
             )
@@ -137,19 +135,21 @@ class FCMService:
             async with httpx.AsyncClient() as client:
                 for device in device_tokens:
                     try:
-                        # Create FCM message using Pydantic model
+                        # Create FCM message using Pydantic model (data-only notification)
+                        # Data-only messages give the app full control over notification display
                         fcm_message = FCMMessage(
                             token=device['token'],
-                            notification=notification_payload,
+                            notification=None,  # Data-only notification
                             data={k: str(v) for k, v in notification_data.model_dump().items() if v is not None},
                             android=FCMAndroidConfig(
                                 priority="high",
-                                notification={"channel_id": "workflow_errors"}
+                                # No notification config for data-only messages
                             ),
                             apns=FCMApnsConfig(
                                 headers={"apns-priority": "10"},
                                 payload={
                                     "aps": {
+                                        "content-available": 1,  # Required for data-only messages on iOS
                                         "sound": "default",
                                         "badge": 1
                                     }
