@@ -136,18 +136,19 @@ class TestWebhookHandlerTesterAccess:
         mock_instance_service,
         mock_db,
         mock_tester_user,
-        mock_instance,
         sample_error_request,
     ):
         """Test that tester on free plan IS allowed to receive push notifications"""
         # Setup mocks
-        mock_instance = MagicMock(spec=N8NInstance)
-        mock_instance.id = "instance_123"
-        mock_instance.user_id = "tester_user_123"
-        mock_instance.enabled = True
+        mock_tester_instance = MagicMock(spec=N8NInstance)
+        mock_tester_instance.id = "instance_123"
+        mock_tester_instance.user_id = "tester_user_123"
+        mock_tester_instance.enabled = True
 
         mock_instance_service_instance = mock_instance_service.return_value
-        mock_instance_service_instance.get_instance_by_id.return_value = mock_instance
+        mock_instance_service_instance.get_instance_by_id.return_value = (
+            mock_tester_instance
+        )
 
         mock_db.query.return_value.filter.return_value.first.return_value = (
             mock_tester_user
@@ -199,13 +200,15 @@ class TestWebhookHandlerTesterAccess:
     ):
         """Test that pro tier user IS allowed to receive push notifications"""
         # Setup mocks
-        mock_instance = MagicMock(spec=N8NInstance)
-        mock_instance.id = "instance_123"
-        mock_instance.user_id = "pro_user_123"
-        mock_instance.enabled = True
+        mock_pro_instance = MagicMock(spec=N8NInstance)
+        mock_pro_instance.id = "instance_123"
+        mock_pro_instance.user_id = "pro_user_123"
+        mock_pro_instance.enabled = True
 
         mock_instance_service_instance = mock_instance_service.return_value
-        mock_instance_service_instance.get_instance_by_id.return_value = mock_instance
+        mock_instance_service_instance.get_instance_by_id.return_value = (
+            mock_pro_instance
+        )
 
         mock_db.query.return_value.filter.return_value.first.return_value = (
             mock_pro_user
@@ -255,13 +258,15 @@ class TestWebhookHandlerTesterAccess:
     ):
         """Test that disabled instance is rejected even for testers"""
         # Setup mocks
-        mock_instance = MagicMock(spec=N8NInstance)
-        mock_instance.id = "instance_123"
-        mock_instance.user_id = "tester_user_123"
-        mock_instance.enabled = False  # Disabled
+        mock_disabled_instance = MagicMock(spec=N8NInstance)
+        mock_disabled_instance.id = "instance_123"
+        mock_disabled_instance.user_id = "tester_user_123"
+        mock_disabled_instance.enabled = False  # Disabled
 
         mock_instance_service_instance = mock_instance_service.return_value
-        mock_instance_service_instance.get_instance_by_id.return_value = mock_instance
+        mock_instance_service_instance.get_instance_by_id.return_value = (
+            mock_disabled_instance
+        )
 
         mock_db.query.return_value.filter.return_value.first.return_value = (
             mock_tester_user
