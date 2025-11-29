@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.firebase import init_firebase
 from app.core.database import engine, Base
@@ -37,6 +38,15 @@ app = FastAPI(
     version=get_version(),
     debug=settings.debug,
     redirect_slashes=False,
+)
+
+# Add CORS middleware (must be first, before rate limiting)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Add rate limiting middleware (applies to all requests)

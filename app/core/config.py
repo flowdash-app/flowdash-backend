@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
-from typing import Optional
+from pydantic import field_validator
+from typing import Optional, List, Union
 
 
 class Settings(BaseSettings):
@@ -28,6 +29,18 @@ class Settings(BaseSettings):
     
     # Encryption
     encryption_key: str
+    
+    # CORS
+    cors_origins: List[str] = ["http://localhost:5000"]
+    
+    @field_validator('cors_origins', mode='before')
+    @classmethod
+    def parse_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
+        """Parse CORS origins from environment variable (comma-separated) or use default list."""
+        if isinstance(v, str):
+            # Split by comma and strip whitespace
+            return [origin.strip() for origin in v.split(',') if origin.strip()]
+        return v
     
     class Config:
         env_file = ".env"
