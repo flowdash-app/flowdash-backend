@@ -23,11 +23,14 @@ class QuotaService:
         user_id: str,
         quota_type: str,
         limit: int = None  # Optional - will use plan limit if not specified
-    ) -> bool:
+    ) -> dict:
         """
         Check if user has quota available.
         If limit is not provided, uses the limit from user's plan tier.
-        Returns True if quota available, False if exceeded.
+        Returns dict with:
+            - 'allowed': bool - True if quota available, False if exceeded
+            - 'is_tester': bool - True if user is a tester (for caller's info)
+            - 'user': User object - cached user object to avoid duplicate queries
         """
         self.logger.info(f"check_quota: Entry - user: {user_id}, type: {quota_type}")
         
@@ -40,7 +43,7 @@ class QuotaService:
             # Testers get unlimited access (treated as Business tier)
             if user.is_tester:
                 self.logger.info(f"check_quota: Unlimited (tester) - user: {user_id}, type: {quota_type}")
-                return True
+                return {'allowed': True, 'is_tester': True, 'user': user}
             
             # Get limit from plan if not specified
             if limit is None:
@@ -59,7 +62,7 @@ class QuotaService:
             # If limit is -1, it's unlimited for this plan
             if limit == -1:
                 self.logger.info(f"check_quota: Unlimited - user: {user_id}, type: {quota_type}, plan: {user.plan_tier}")
-                return True
+                return {'allowed': True, 'is_tester': False, 'user': user}
             
             # Check hourly sub-limits for free users (prevent burst abuse)
             if user.plan_tier == 'free':
@@ -67,7 +70,7 @@ class QuotaService:
                 if hourly_limit > 0:
                     if not self._check_hourly_quota(user_id, quota_type, hourly_limit):
                         self.logger.info(f"check_quota: Hourly sub-limit exceeded - user: {user_id}, type: {quota_type}")
-                        return False
+                        return {'allowed': False, 'is_tester': False, 'user': user}
             
             today = date.today()
             quota = db.query(Quota).filter(
@@ -91,10 +94,10 @@ class QuotaService:
             
             if quota.count >= limit:
                 self.logger.info(f"check_quota: Quota exceeded - user: {user_id}, type: {quota_type}, plan: {user.plan_tier}")
-                return False
+                return {'allowed': False, 'is_tester': False, 'user': user}
             
             self.logger.info(f"check_quota: Success - user: {user_id}, type: {quota_type}, count: {quota.count}/{limit}, plan: {user.plan_tier}")
-            return True
+            return {'allowed': True, 'is_tester': False, 'user': user}
         except Exception as e:
             self.analytics.log_failure(
                 action='check_quota',
@@ -165,12 +168,26 @@ class QuotaService:
         self,
         db: Session,
         user_id: str,
-        quota_type: str
+        quota_type: str,
+        user: User = None  # Optional: pass user object from check_quota to avoid duplicate query
     ):
-        """Increment quota count atomically"""
+        """
+        Increment quota count atomically.
+        If user object is provided (from check_quota), it will be reused to avoid duplicate query.
+        Automatically skips increment for testers (they have unlimited access).
+        """
         self.logger.info(f"increment_quota: Entry - user: {user_id}, type: {quota_type}")
         
         try:
+            # Get user if not provided
+            if user is None:
+                user = db.query(User).filter(User.id == user_id).first()
+            
+            # Skip increment for testers - they have unlimited access
+            if user and user.is_tester:
+                self.logger.info(f"increment_quota: Skipped (tester) - user: {user_id}, type: {quota_type}")
+                return
+            
             today = date.today()
             quota = db.query(Quota).filter(
                 and_(
@@ -193,8 +210,7 @@ class QuotaService:
                 quota.count += 1
             
             # Increment hourly quota for free users (not testers)
-            user = db.query(User).filter(User.id == user_id).first()
-            if user and user.plan_tier == 'free' and not user.is_tester:
+            if user and user.plan_tier == 'free':
                 self._increment_hourly_quota(user_id, quota_type)
             
             db.commit()

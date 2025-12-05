@@ -126,14 +126,14 @@ class InstanceService:
                 db.add(user)
                 db.flush()
             
-            # Testers get unlimited instances
+            # Testers get unlimited instances (handled by quota check above)
             if not user.is_tester:
                 # Check instance limit based on plan
                 existing_instances = db.query(N8NInstance).filter(
                     N8NInstance.user_id == user_id
                 ).count()
                 
-                plan_config = PlanConfiguration.get_plan(db, user.plan_tier)
+                plan_config = PlanConfiguration.get_plan(db, user.plan_tier, user=user)
                 max_instances = plan_config.get('max_instances', 1)
                 
                 if max_instances != -1 and existing_instances >= max_instances:
@@ -143,8 +143,7 @@ class InstanceService:
                     )
                 
                 # Check rate limit for free users (max 1 creation per day)
-                # Testers bypass rate limiting
-                if user.plan_tier == 'free' and not user.is_tester:
+                if user.plan_tier == 'free':
                     if not self._check_instance_creation_rate_limit(user_id):
                         raise HTTPException(
                         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -168,6 +167,7 @@ class InstanceService:
             db.refresh(instance)
             
             # Increment instance creation count for free users (not testers)
+            # Testers have unlimited instances, so no tracking needed
             if user.plan_tier == 'free' and not user.is_tester:
                 self._increment_instance_creation_count(user_id)
             

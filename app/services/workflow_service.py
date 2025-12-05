@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 
 from app.core.cache import get_cached_executions, set_cached_executions
 from app.models.audit_log import AuditLog
-from app.models.user import User
 from app.services.analytics_service import AnalyticsService
 from app.services.instance_service import InstanceService
 from app.services.quota_service import QuotaService
@@ -46,7 +45,8 @@ class WorkflowService:
                 limit = 100
 
             # Check quota for refreshes
-            if not self.quota_service.check_quota(db, user_id, 'refreshes'):
+            quota_check = self.quota_service.check_quota(db, user_id, 'refreshes')
+            if not quota_check['allowed']:
                 from fastapi import HTTPException, status
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -111,8 +111,8 @@ class WorkflowService:
                 workflows_data = result.get("data", [])
                 next_cursor = result.get("nextCursor")
 
-            # Increment quota for refresh
-            self.quota_service.increment_quota(db, user_id, 'refreshes')
+            # Increment quota for refresh (pass user object to avoid duplicate query)
+            self.quota_service.increment_quota(db, user_id, 'refreshes', user=quota_check.get('user'))
 
             self.analytics.log_success(
                 action='get_workflows',
@@ -162,21 +162,18 @@ class WorkflowService:
             f"toggle_workflow: Entry - user: {user_id}, workflow: {workflow_id}, enabled: {enabled}")
 
         try:
-            # Check if user is on free plan (read-only mode)
-            user = db.query(User).filter(User.id == user_id).first()
-            if not user:
-                raise ValueError("User not found")
-
-            if user.plan_tier == 'free' and not user.is_tester:
-                from fastapi import HTTPException, status
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Free plan is read-only. Upgrade to Pro to control workflows."
-                )
-
             # Check quota (uses user's plan tier limit)
-            if not self.quota_service.check_quota(db, user_id, 'toggles'):
+            # QuotaService handles tester bypass internally
+            quota_check = self.quota_service.check_quota(db, user_id, 'toggles')
+            if not quota_check['allowed']:
                 from fastapi import HTTPException, status
+                # Check if user is on free plan (read-only mode) for better error message
+                user = quota_check.get('user')
+                if user and user.plan_tier == 'free':
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Free plan is read-only. Upgrade to Pro to control workflows."
+                    )
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                     detail="Daily toggle quota exceeded. Upgrade your plan for more toggles."
@@ -223,8 +220,8 @@ class WorkflowService:
                 response.raise_for_status()
                 result = response.json()
 
-            # Increment quota
-            self.quota_service.increment_quota(db, user_id, 'toggles')
+            # Increment quota (pass user object to avoid duplicate query)
+            self.quota_service.increment_quota(db, user_id, 'toggles', user=quota_check.get('user'))
 
             # Create audit log
             audit_log = AuditLog(
@@ -294,11 +291,18 @@ class WorkflowService:
             elif limit < 1:
                 limit = 20
 
-            # Get user plan to determine caching strategy
-            user = db.query(User).filter(User.id == user_id).first()
-            if not user:
-                raise ValueError("User not found")
-
+            # Check quota for refreshes first
+            # QuotaService handles tester bypass internally
+            quota_check = self.quota_service.check_quota(db, user_id, 'refreshes')
+            if not quota_check['allowed']:
+                from fastapi import HTTPException, status
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Daily refresh quota exceeded. Upgrade your plan for more refreshes."
+                )
+            
+            # Use user from quota_check to determine caching strategy
+            user = quota_check.get('user')
             user_plan = user.plan_tier
             # Testers get real-time data (no caching)
             # Pro plan uses cache, free plan uses longer cache
@@ -321,14 +325,6 @@ class WorkflowService:
                     self.logger.info(
                         f"get_executions: Cache hit - instance: {instance_id}, plan: {user_plan}")
                     return cached
-
-            # Check quota for refreshes
-            if not self.quota_service.check_quota(db, user_id, 'refreshes'):
-                from fastapi import HTTPException, status
-                raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail="Daily refresh quota exceeded. Upgrade your plan for more refreshes."
-                )
 
             # Get instance and verify ownership
             instance = self.instance_service.get_instance(
@@ -390,8 +386,8 @@ class WorkflowService:
                 executions_data = result.get("data", [])
                 next_cursor = result.get("nextCursor")
 
-            # Increment quota for refresh
-            self.quota_service.increment_quota(db, user_id, 'refreshes')
+            # Increment quota for refresh (pass user object to avoid duplicate query)
+            self.quota_service.increment_quota(db, user_id, 'refreshes', user=user)
 
             result = {
                 "data": executions_data,
@@ -466,8 +462,10 @@ class WorkflowService:
 
         try:
             # Check quota for error views (only when include_data is True)
+            quota_check = None
             if include_data:
-                if not self.quota_service.check_quota(db, user_id, 'error_views'):
+                quota_check = self.quota_service.check_quota(db, user_id, 'error_views')
+                if not quota_check['allowed']:
                     from fastapi import HTTPException, status
                     raise HTTPException(
                         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -515,8 +513,9 @@ class WorkflowService:
                 result = response.json()
 
             # Increment quota for error view (only when include_data is True)
-            if include_data:
-                self.quota_service.increment_quota(db, user_id, 'error_views')
+            # Pass user object to avoid duplicate query
+            if include_data and quota_check:
+                self.quota_service.increment_quota(db, user_id, 'error_views', user=quota_check.get('user'))
 
             self.analytics.log_success(
                 action='get_execution_by_id',
@@ -632,7 +631,7 @@ class WorkflowService:
             if not workflow_id:
                 from fastapi import HTTPException, status
                 self.logger.error(
-                    f"retry_execution: Missing workflow_id in execution data")
+                    "retry_execution: Missing workflow_id in execution data")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Cannot retry execution: workflow ID not found in execution data."
@@ -759,7 +758,7 @@ class WorkflowService:
                     error_data = e.response.json()
                     error_detail = error_data.get(
                         'message') or error_data.get('detail') or str(e)
-            except:
+            except Exception:
                 pass
 
             self.analytics.log_failure(
