@@ -143,7 +143,8 @@ class InstanceService:
                     )
                 
                 # Check rate limit for free users (max 1 creation per day)
-                if user.plan_tier == 'free':
+                # Testers bypass rate limiting
+                if user.plan_tier == 'free' and not user.is_tester:
                     if not self._check_instance_creation_rate_limit(user_id):
                         raise HTTPException(
                         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -166,8 +167,8 @@ class InstanceService:
             db.commit()
             db.refresh(instance)
             
-            # Increment instance creation count for free users
-            if user.plan_tier == 'free':
+            # Increment instance creation count for free users (not testers)
+            if user.plan_tier == 'free' and not user.is_tester:
                 self._increment_instance_creation_count(user_id)
             
             self.analytics.log_success(

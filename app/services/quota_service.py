@@ -192,9 +192,9 @@ class QuotaService:
             else:
                 quota.count += 1
             
-            # Increment hourly quota for free users
+            # Increment hourly quota for free users (not testers)
             user = db.query(User).filter(User.id == user_id).first()
-            if user and user.plan_tier == 'free':
+            if user and user.plan_tier == 'free' and not user.is_tester:
                 self._increment_hourly_quota(user_id, quota_type)
             
             db.commit()
