@@ -8,7 +8,6 @@ from app.core.security import decrypt_api_key
 from fastapi import HTTPException, status
 import logging
 import httpx
-import json
 
 logger = logging.getLogger(__name__)
 
