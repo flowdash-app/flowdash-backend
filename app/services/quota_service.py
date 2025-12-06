@@ -74,23 +74,6 @@ class QuotaService:
             today = date.today()
             cache = get_cache()
             lock_key = f"quota_lock:{user_id}:{quota_type}:{today}"
-            quota = db.query(Quota).filter(
-                and_(
-                    Quota.user_id == user_id,
-                    Quota.quota_type == quota_type,
-                    Quota.quota_date == today
-                )
-            ).first()
-            
-            if not quota:
-                quota = Quota(
-                    id=str(uuid.uuid4()),
-                    user_id=user_id,
-                    quota_type=quota_type,
-                    quota_date=today,
-                    count=0
-                )
-                db.add(quota)
             
             # Try to acquire lock (wait up to 5 seconds)
             lock_acquired = cache.acquire_lock(lock_key, timeout_seconds=10, block_seconds=5)
@@ -101,7 +84,6 @@ class QuotaService:
                     # This is safer than blocking indefinitely
                     self.logger.warning(f"check_quota: Could not acquire lock - {user_id}, {quota_type}")
                 
-                today = date.today()
                 quota = db.query(Quota).filter(
                     and_(
                         Quota.user_id == user_id,
@@ -260,18 +242,17 @@ class QuotaService:
                     self._increment_hourly_quota(user_id, quota_type)
                 
                 db.commit()
+                
+                self.analytics.log_success(
+                    action='increment_quota',
+                    user_id=user_id,
+                    parameters={'quota_type': quota_type, 'count': quota.count}
+                )
+                self.logger.info(f"increment_quota: Success - user: {user_id}, type: {quota_type}, count: {quota.count}")
             finally:
                 # Always release lock
                 if lock_acquired:
                     cache.release_lock(lock_key)
-            
-            self.analytics.log_success(
-                action='increment_quota',
-                user_id=user_id,
-                parameters={'quota_type': quota_type}
-            )
-            self.logger.info(f"increment_quota: Success - user: {user_id}, type: {quota_type}")
-            return quota.count
         except Exception as e:
             db.rollback()
             self.analytics.log_failure(
