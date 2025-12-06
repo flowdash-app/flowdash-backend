@@ -45,8 +45,15 @@ class PlanConfiguration:
     """Legacy plan configuration - kept for backward compatibility during migration"""
 
     @classmethod
-    def get_plan(cls, db: Session, plan_tier: str) -> dict:
-        """Get plan configuration from database"""
+    def get_plan(cls, db: Session, plan_tier: str, user: User = None) -> dict:
+        """
+        Get plan configuration from database.
+        If user is provided and is a tester, returns pro-level limits regardless of plan_tier.
+        """
+        # Testers get pro-level access
+        if user and user.is_tester:
+            plan_tier = 'pro'
+        
         plan = db.query(Plan).filter(Plan.tier == plan_tier.lower()).first()
         if not plan:
             # Fallback to free if not found

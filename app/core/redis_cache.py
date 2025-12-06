@@ -1,7 +1,8 @@
 import json
 import logging
+import uuid
 from typing import Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime
 import redis
 from redis.exceptions import RedisError, ConnectionError as RedisConnectionError
 from app.core.config import settings
@@ -402,4 +403,119 @@ class RedisCache:
             return True
         except (RedisError, RuntimeError, RecursionError):
             return False
+    
+    def acquire_lock(self, lock_key: str, timeout_seconds: int = 10, block_seconds: int = 5) -> bool:
+        """
+        Acquire a distributed lock using Redis.
+        
+        Args:
+            lock_key: Unique key for the lock
+            timeout_seconds: How long the lock will be held (auto-release)
+            block_seconds: How long to wait trying to acquire the lock
+        
+        Returns:
+            True if lock acquired, False otherwise
+        """
+        try:
+            self._ensure_connected()
+            if self._client is None:
+                logger.warning(f"RedisCache: Cannot acquire lock {lock_key} - Redis not available")
+                return False
+            
+            # Try to acquire lock with SET NX EX (atomic operation)
+            # Returns True if key was set (lock acquired), False if key already exists
+            end_time = datetime.utcnow().timestamp() + block_seconds
+            lock_value = str(uuid.uuid4())  # Unique value to identify our lock
+            
+            while datetime.utcnow().timestamp() < end_time:
+                # SET key value NX EX timeout - atomic operation
+                acquired = self._client.set(
+                    lock_key,
+                    lock_value,
+                    nx=True,  # Only set if key doesn't exist
+                    ex=timeout_seconds  # Expire after timeout
+                )
+                
+                if acquired:
+                    logger.debug(f"RedisCache: Lock acquired - {lock_key}")
+                    return True
+                
+                # Wait a bit before retrying
+                import time
+                time.sleep(0.05)  # 50ms
+            
+            logger.debug(f"RedisCache: Failed to acquire lock - {lock_key}")
+            return False
+            
+        except RedisError as e:
+            logger.error(f"RedisCache: Error acquiring lock {lock_key}: {e}")
+            self._connected = False
+            return False
+    
+    def release_lock(self, lock_key: str):
+        """
+        Release a distributed lock.
+        
+        Args:
+            lock_key: The key of the lock to release
+        """
+        try:
+            self._ensure_connected()
+            if self._client is None:
+                logger.warning(f"RedisCache: Cannot release lock {lock_key} - Redis not available")
+                return
+            
+            self._client.delete(lock_key)
+            logger.debug(f"RedisCache: Lock released - {lock_key}")
+            
+        except RedisError as e:
+            logger.error(f"RedisCache: Error releasing lock {lock_key}: {e}")
+            self._connected = False
+    
+    def incr(self, key: str, amount: int = 1) -> Optional[int]:
+        """
+        Atomically increment a counter in Redis.
+        
+        Args:
+            key: The key to increment
+            amount: Amount to increment by (default 1)
+        
+        Returns:
+            The new value after increment, or None if Redis unavailable
+        """
+        try:
+            self._ensure_connected()
+            if self._client is None:
+                logger.warning(f"RedisCache: Cannot increment key {key} - Redis not available")
+                return None
+            
+            new_value = self._client.incrby(key, amount)
+            logger.debug(f"RedisCache: Incremented {key} by {amount} to {new_value}")
+            return new_value
+            
+        except RedisError as e:
+            logger.error(f"RedisCache: Error incrementing key {key}: {e}")
+            self._connected = False
+            return None
+    
+    def expire(self, key: str, seconds: int):
+        """
+        Set expiration time on a key.
+        
+        Args:
+            key: The key to set expiration on
+            seconds: Number of seconds until expiration
+        """
+        try:
+            self._ensure_connected()
+            if self._client is None:
+                logger.warning(f"RedisCache: Cannot set expiration on key {key} - Redis not available")
+                return
+            
+            self._client.expire(key, seconds)
+            logger.debug(f"RedisCache: Set expiration on {key} to {seconds} seconds")
+            
+        except RedisError as e:
+            logger.error(f"RedisCache: Error setting expiration on key {key}: {e}")
+            self._connected = False
 

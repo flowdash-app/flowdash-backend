@@ -8,7 +8,6 @@ from app.core.security import decrypt_api_key
 from fastapi import HTTPException, status
 import logging
 import httpx
-import json
 
 logger = logging.getLogger(__name__)
 
@@ -259,8 +258,8 @@ class ErrorWorkflowService:
                 )
             
             # Check plan allows push notifications (and thus error workflows)
-            # Testers get unlimited access (handled in quota checks)
-            plan_config = PlanConfiguration.get_plan(db, user.plan_tier)
+            # PlanConfiguration.get_plan handles tester bypass internally
+            plan_config = PlanConfiguration.get_plan(db, user.plan_tier, user=user)
             
             if not plan_config['push_notifications']:
                 self.analytics.log_failure(
@@ -436,6 +435,7 @@ class ErrorWorkflowService:
                 "is_update": is_update
             }
             
+            effective_plan = user.plan_tier + (" (Tester)" if user.is_tester else "")
             self.analytics.log_success(
                 action='create_workflow_in_n8n',
                 user_id=user_id,

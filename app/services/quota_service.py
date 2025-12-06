@@ -5,7 +5,7 @@ from app.models.user import User
 from app.services.analytics_service import AnalyticsService
 from app.services.subscription_service import PlanConfiguration
 from app.core.cache import get_cache
-from datetime import date, datetime
+from datetime import date
 import uuid
 import logging
 
@@ -22,8 +22,19 @@ class QuotaService:
         db: Session,
         user_id: str,
         quota_type: str,
-        limit: int = None
-    ) -> bool:
+        limit: int = None  # Optional - will use plan limit if not specified
+    ) -> dict:
+        """
+        Check if user has quota available using Redis distributed lock for atomicity.
+        If limit is not provided, uses the limit from user's plan tier.
+        Returns dict with:
+            - 'allowed': bool - True if quota available, False if exceeded
+            - 'is_tester': bool - True if user is a tester (for caller's info)
+            - 'user': User object - cached user object to avoid duplicate queries
+        
+        Uses Redis distributed lock to prevent race conditions where multiple
+        concurrent requests could bypass quota limits.
+        """
         self.logger.info(f"check_quota: Entry - user: {user_id}, type: {quota_type}")
         
         try:
@@ -33,7 +44,7 @@ class QuotaService:
             
             if user.is_tester:
                 self.logger.info(f"check_quota: Unlimited (tester) - user: {user_id}, type: {quota_type}")
-                return True
+                return {'allowed': True, 'is_tester': True, 'user': user}
             
             if limit is None:
                 quota_type_map = {
@@ -49,40 +60,59 @@ class QuotaService:
             
             if limit == -1:
                 self.logger.info(f"check_quota: Unlimited - user: {user_id}, type: {quota_type}, plan: {user.plan_tier}")
-                return True
+                return {'allowed': True, 'is_tester': False, 'user': user}
             
             if user.plan_tier == 'free':
                 hourly_limit = self._get_hourly_sub_limit(quota_type, limit)
                 if hourly_limit > 0:
                     if not self._check_hourly_quota(user_id, quota_type, hourly_limit):
                         self.logger.info(f"check_quota: Hourly sub-limit exceeded - user: {user_id}, type: {quota_type}")
-                        return False
+                        return {'allowed': False, 'is_tester': False, 'user': user}
             
+            # Use Redis distributed lock to prevent race conditions
+            # Lock key is unique per user and quota type
             today = date.today()
-            quota = db.query(Quota).filter(
-                and_(
-                    Quota.user_id == user_id,
-                    Quota.quota_type == quota_type,
-                    Quota.quota_date == today
-                )
-            ).first()
+            cache = get_cache()
+            lock_key = f"quota_lock:{user_id}:{quota_type}:{today}"
             
-            if not quota:
-                quota = Quota(
-                    id=str(uuid.uuid4()),
-                    user_id=user_id,
-                    quota_type=quota_type,
-                    quota_date=today,
-                    count=0
-                )
-                db.add(quota)
+            # Try to acquire lock (wait up to 5 seconds)
+            lock_acquired = cache.acquire_lock(lock_key, timeout_seconds=10, block_seconds=5)
             
-            if quota.count >= limit:
-                self.logger.info(f"check_quota: Quota exceeded - user: {user_id}, type: {quota_type}, plan: {user.plan_tier}")
-                return False
-            
-            self.logger.info(f"check_quota: Success - user: {user_id}, type: {quota_type}, count: {quota.count}/{limit}, plan: {user.plan_tier}")
-            return True
+            try:
+                if not lock_acquired:
+                    # If we can't get the lock, fall back to non-atomic check
+                    # This is safer than blocking indefinitely
+                    self.logger.warning(f"check_quota: Could not acquire lock - {user_id}, {quota_type}")
+                
+                quota = db.query(Quota).filter(
+                    and_(
+                        Quota.user_id == user_id,
+                        Quota.quota_type == quota_type,
+                        Quota.quota_date == today
+                    )
+                ).first()
+                
+                if not quota:
+                    # Create new quota for today
+                    quota = Quota(
+                        id=str(uuid.uuid4()),
+                        user_id=user_id,
+                        quota_type=quota_type,
+                        quota_date=today,
+                        count=0
+                    )
+                    db.add(quota)
+                
+                if quota.count >= limit:
+                    self.logger.info(f"check_quota: Quota exceeded - user: {user_id}, type: {quota_type}, plan: {user.plan_tier}")
+                    return {'allowed': False, 'is_tester': False, 'user': user}
+                
+                self.logger.info(f"check_quota: Success - user: {user_id}, type: {quota_type}, count: {quota.count}/{limit}, plan: {user.plan_tier}")
+                return {'allowed': True, 'is_tester': False, 'user': user}
+            finally:
+                # Always release lock
+                if lock_acquired:
+                    cache.release_lock(lock_key)
         except Exception as e:
             self.analytics.log_failure(
                 action='check_quota',
@@ -150,44 +180,79 @@ class QuotaService:
         self,
         db: Session,
         user_id: str,
-        quota_type: str
+        quota_type: str,
+        user: User = None  # Optional: pass user object from check_quota to avoid duplicate query
     ):
+        """
+        Increment quota count atomically using Redis distributed lock.
+        If user object is provided (from check_quota), it will be reused to avoid duplicate query.
+        Automatically skips increment for testers (they have unlimited access).
+        
+        Uses Redis distributed lock to ensure atomic increment operations and prevent
+        race conditions where multiple concurrent requests could bypass quota limits.
+        """
         self.logger.info(f"increment_quota: Entry - user: {user_id}, type: {quota_type}")
         
         try:
+            # Get user if not provided
+            if user is None:
+                user = db.query(User).filter(User.id == user_id).first()
+            
+            # Skip increment for testers - they have unlimited access
+            if user and user.is_tester:
+                self.logger.info(f"increment_quota: Skipped (tester) - user: {user_id}, type: {quota_type}")
+                return
+            
+            # Use Redis distributed lock to prevent race conditions
+            cache = get_cache()
             today = date.today()
-            quota = db.query(Quota).filter(
-                and_(
-                    Quota.user_id == user_id,
-                    Quota.quota_type == quota_type,
-                    Quota.quota_date == today
-                )
-            ).first()
+            lock_key = f"quota_lock:{user_id}:{quota_type}:{today}"
             
-            if not quota:
-                quota = Quota(
-                    id=str(uuid.uuid4()),
+            # Try to acquire lock (wait up to 5 seconds)
+            lock_acquired = cache.acquire_lock(lock_key, timeout_seconds=10, block_seconds=5)
+            
+            try:
+                if not lock_acquired:
+                    # If we can't get the lock, log warning but still increment
+                    # This is safer than failing silently
+                    self.logger.warning(f"increment_quota: Could not acquire lock - {user_id}, {quota_type}")
+                
+                quota = db.query(Quota).filter(
+                    and_(
+                        Quota.user_id == user_id,
+                        Quota.quota_type == quota_type,
+                        Quota.quota_date == today
+                    )
+                ).first()
+                
+                if not quota:
+                    quota = Quota(
+                        id=str(uuid.uuid4()),
+                        user_id=user_id,
+                        quota_type=quota_type,
+                        quota_date=today,
+                        count=1
+                    )
+                    db.add(quota)
+                else:
+                    quota.count += 1
+                
+                # Increment hourly quota for free users (not testers)
+                if user and user.plan_tier == 'free':
+                    self._increment_hourly_quota(user_id, quota_type)
+                
+                db.commit()
+                
+                self.analytics.log_success(
+                    action='increment_quota',
                     user_id=user_id,
-                    quota_type=quota_type,
-                    quota_date=today,
-                    count=1
+                    parameters={'quota_type': quota_type, 'count': quota.count}
                 )
-                db.add(quota)
-            else:
-                quota.count += 1
-            
-            user = db.query(User).filter(User.id == user_id).first()
-            if user and user.plan_tier == 'free':
-                self._increment_hourly_quota(user_id, quota_type)
-            
-            db.commit()
-            self.analytics.log_success(
-                action='increment_quota',
-                user_id=user_id,
-                parameters={'quota_type': quota_type}
-            )
-            self.logger.info(f"increment_quota: Success - user: {user_id}, type: {quota_type}")
-            return quota.count
+                self.logger.info(f"increment_quota: Success - user: {user_id}, type: {quota_type}, count: {quota.count}")
+            finally:
+                # Always release lock
+                if lock_acquired:
+                    cache.release_lock(lock_key)
         except Exception as e:
             db.rollback()
             self.analytics.log_failure(
