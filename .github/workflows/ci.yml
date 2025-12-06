@@ -1,0 +1,165 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  lint:
+    name: Lint Code
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff black
+
+      - name: Run Ruff
+        run: |
+          ruff check app/ tests/ --select E,F,W,I
+        continue-on-error: true
+
+      - name: Run Black
+        run: |
+          black --check app/ tests/
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create Firebase credentials mock file
+        run: |
+          mkdir -p /tmp
+          cat > /tmp/test-creds.json << 'EOF'
+          {
+            "type": "service_account",
+            "project_id": "test-project",
+            "private_key_id": "test-key-id",
+            "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7W8jYbN3qCyYO\nwHjN8C7uxHvK7KqDfVJ5kLpY8xAqDgZ0mB6E1Z8vxOV7W4QGqN8YQG5e0VJ0nQYP\nEuWxN7iT0K7LMcJJ1fN7YH2KjQ1rE5wN8nLzOXF0xQKBgHm3R5Y8yHjF3wN7fP5Y\nxKBgQDNiL0Y8N7F5xB3wF8yHjN7L5F8N3Y8wB7H5F8xN7K8wH5N7F8xY3wB8N7F5\nxH3K8wN7F5xB3wH8N7F5xH3K8wN7F5xB3wF8N7F5xH3K8wN7F5xB3AgMBAAECggEA\nAWJgFVPjJPh9P8BxBqN7vLNe0Fp8YH8DGz1sKBW0JrH5F8xN7K8wH5N7F8xY3wB8\nN7F5xH3K8wN7F5xB3wH8N7F5xH3K8wN7F5xB3wF8N7F5xH3K8wN7F5xB3QKBgQDN\niL0Y8N7F5xB3wF8yHjN7L5F8N3Y8wB7H5F8xN7K8wH5N7F8xY3wB8N7F5xH3K8wN\n7F5xB3wH8N7F5xH3K8wN7F5xB3wF8N7F5xH3K8wN7F5xB3QKBgQC7W8jYbN3qCyYO\nwHjN8C7uxHvK7KqDfVJ5kLpY8xAqDgZ0mB6E1Z8vxOV7W4QGqN8YQG5e0VJ0nQYP\nEuWxN7iT0K7LMcJJ1fN7YH2KjQ1rE5wN8nLzOXF0xQKBgHm3R5Y8yHjF3wN7fP5Y\nxKBgQDNiL0Y8N7F5xB3wF8yHjN7L5F8N3Y8wB7H5F8xN7K8wH5N7F8xY3wB8N7F5\nxH3K8wN7F5xB3wH8N7F5xH3K8wN7F5xB3wF8N7F5xH3K8wN7F5xB3\n-----END PRIVATE KEY-----\n",
+            "client_email": "test@test-project.iam.gserviceaccount.com",
+            "client_id": "123456789",
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/test%40test-project.iam.gserviceaccount.com"
+          }
+          EOF
+
+      - name: Run unit tests
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test_db
+          REDIS_URL: redis://localhost:6379/1
+          REDIS_PASSWORD: ""
+          FIREBASE_PROJECT_ID: test-project
+          FIREBASE_CREDENTIALS_PATH: /tmp/test-creds.json
+          SECRET_KEY: test-secret-key-for-testing-only
+          ENCRYPTION_KEY: test-encryption-key-32-bytes!!
+          N8N_API_CACHE_ENABLED: "false"
+          RATE_LIMIT_ENABLED: "false"
+        run: |
+          pytest tests/ -v --cov=app --cov-report=term-missing --cov-report=xml -m "not integration"
+
+      - name: Run integration tests
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test_db
+          REDIS_URL: redis://localhost:6379/1
+          REDIS_PASSWORD: ""
+          FIREBASE_PROJECT_ID: test-project
+          FIREBASE_CREDENTIALS_PATH: /tmp/test-creds.json
+          SECRET_KEY: test-secret-key-for-testing-only
+          ENCRYPTION_KEY: test-encryption-key-32-bytes!!
+          N8N_API_CACHE_ENABLED: "false"
+          RATE_LIMIT_ENABLED: "false"
+        run: |
+          pytest tests/ -v -m "integration"
+        continue-on-error: true
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+        continue-on-error: true
+
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: flowdash-backend:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
