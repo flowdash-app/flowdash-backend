@@ -5,7 +5,7 @@ from app.models.user import User
 from app.services.analytics_service import AnalyticsService
 from app.services.subscription_service import PlanConfiguration
 from app.core.cache import get_cache
-from datetime import date, datetime
+from datetime import date
 import uuid
 import logging
 
@@ -16,7 +16,7 @@ class QuotaService:
     def __init__(self):
         self.analytics = AnalyticsService()
         self.logger = logging.getLogger(__name__)
-    
+
     def check_quota(
         self,
         db: Session,
@@ -38,19 +38,15 @@ class QuotaService:
         self.logger.info(f"check_quota: Entry - user: {user_id}, type: {quota_type}")
         
         try:
-            # Get user's plan tier
             user = db.query(User).filter(User.id == user_id).first()
             if not user:
                 raise ValueError("User not found")
             
-            # Testers get unlimited access (treated as Business tier)
             if user.is_tester:
                 self.logger.info(f"check_quota: Unlimited (tester) - user: {user_id}, type: {quota_type}")
                 return {'allowed': True, 'is_tester': True, 'user': user}
             
-            # Get limit from plan if not specified
             if limit is None:
-                # Map quota_type to plan configuration key
                 quota_type_map = {
                     'toggles': 'toggles_per_day',
                     'refreshes': 'refreshes_per_day',
@@ -62,12 +58,10 @@ class QuotaService:
                 
                 limit = PlanConfiguration.get_limit(db, user.plan_tier, plan_limit_key)
             
-            # If limit is -1, it's unlimited for this plan
             if limit == -1:
                 self.logger.info(f"check_quota: Unlimited - user: {user_id}, type: {quota_type}, plan: {user.plan_tier}")
                 return {'allowed': True, 'is_tester': False, 'user': user}
             
-            # Check hourly sub-limits for free users (prevent burst abuse)
             if user.plan_tier == 'free':
                 hourly_limit = self._get_hourly_sub_limit(quota_type, limit)
                 if hourly_limit > 0:
@@ -129,13 +123,11 @@ class QuotaService:
             )
             self.logger.error(f"check_quota: Failure - {e}")
             raise
-    
+
     def get_quota_status(self, db: Session, user_id: str) -> dict:
-        """Get current quota usage for all quota types"""
         self.logger.info(f"get_quota_status: Entry - user: {user_id}")
         
         try:
-            # Get user's plan tier
             user = db.query(User).filter(User.id == user_id).first()
             if not user:
                 raise ValueError("User not found")
@@ -148,7 +140,6 @@ class QuotaService:
                 'quotas': {}
             }
             
-            # Check each quota type
             quota_types = {
                 'toggles': 'toggles_per_day',
                 'refreshes': 'refreshes_per_day',
@@ -171,7 +162,7 @@ class QuotaService:
                 result['quotas'][quota_type] = {
                     'used': current_count,
                     'limit': limit,
-                    'remaining': limit - current_count if limit != -1 else -1,  # -1 = unlimited
+                    'remaining': limit - current_count if limit != -1 else -1,
                     'unlimited': limit == -1
                 }
             
@@ -185,7 +176,7 @@ class QuotaService:
             )
             self.logger.error(f"get_quota_status: Failure - {e}")
             raise
-    
+
     def increment_quota(
         self,
         db: Session,
@@ -260,9 +251,10 @@ class QuotaService:
             self.analytics.log_success(
                 action='increment_quota',
                 user_id=user_id,
-                parameters={'quota_type': quota_type, 'count': quota.count}
+                parameters={'quota_type': quota_type}
             )
-            self.logger.info(f"increment_quota: Success - user: {user_id}, type: {quota_type}, count: {quota.count}")
+            self.logger.info(f"increment_quota: Success - user: {user_id}, type: {quota_type}")
+            return quota.count
         except Exception as e:
             db.rollback()
             self.analytics.log_failure(
@@ -273,45 +265,71 @@ class QuotaService:
             )
             self.logger.error(f"increment_quota: Failure - {e}")
             raise
-    
-    def _get_hourly_sub_limit(self, quota_type: str, daily_limit: int) -> int:
-        """Get hourly sub-limit for free users to prevent burst abuse."""
-        # For free users: enforce hourly sub-limits
-        # 0 toggles/day = no hourly limit needed (read-only)
-        # 5 refreshes/day = max 2 refreshes/hour
-        # 3 error views/day = max 1 error view/hour
-        hourly_limits = {
-            'toggles': 0,  # Read-only, no hourly limit
-            'refreshes': 2,  # Max 2 per hour
-            'error_views': 1,  # Max 1 per hour
-        }
-        return hourly_limits.get(quota_type, 0)
-    
-    def _check_hourly_quota(self, user_id: str, quota_type: str, hourly_limit: int) -> bool:
-        """Check if user is within hourly quota limit using cache."""
-        cache = get_cache()
-        current_hour = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
-        cache_key = f"quota_hourly:{user_id}:{quota_type}:{current_hour.isoformat()}"
-        
-        cached_count = cache.get(cache_key)
-        if cached_count is None:
-            cached_count = 0
-        
-        if cached_count >= hourly_limit:
-            return False
-        
-        return True
-    
-    def _increment_hourly_quota(self, user_id: str, quota_type: str):
-        """Increment hourly quota count in cache."""
-        cache = get_cache()
-        current_hour = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
-        cache_key = f"quota_hourly:{user_id}:{quota_type}:{current_hour.isoformat()}"
-        
-        cached_count = cache.get(cache_key)
-        if cached_count is None:
-            cached_count = 0
-        
-        # Increment and store for 1 hour
-        cache.set(cache_key, cached_count + 1, ttl_minutes=60)
 
+    def reset_quota(self, db: Session, user_id: str, quota_type: str = None, quota_date: date = None):
+        """
+        Reset quota counts for a user by setting count to 0.
+
+        Args:
+            db: Database session.
+            user_id: User ID (Firebase UID).
+            quota_type: Specific quota type to reset. Defaults to None (all types).
+            quota_date: Target date for reset. Defaults to today.
+
+        Returns:
+            int: Number of rows updated.
+        """
+        self.logger.info(f"reset_quota: Entry - user: {user_id}, type: {quota_type}, date: {quota_date}")
+        
+        try:
+            if not quota_date:
+                quota_date = date.today()
+
+            query = db.query(Quota).filter(
+                and_(
+                    Quota.user_id == user_id,
+                    Quota.quota_date == quota_date
+                )
+            )
+
+            if quota_type:
+                query = query.filter(Quota.quota_type == quota_type)
+
+            rows_updated = query.update({"count": 0})
+            db.commit()
+
+            self.logger.info(f"reset_quota: Success - user: {user_id}, rows updated: {rows_updated}")
+            return rows_updated
+        except Exception as e:
+            db.rollback()
+            self.logger.error(f"reset_quota: Failure - {e}")
+            raise
+
+    def _get_hourly_sub_limit(self, quota_type: str, daily_limit: int) -> int:
+        try:
+            if daily_limit <= 0:
+                return 0
+            hourly = max(1, int(daily_limit * 0.25))
+            return hourly
+        except Exception:
+            return 0
+
+    def _check_hourly_quota(self, user_id: str, quota_type: str, hourly_limit: int) -> bool:
+        try:
+            cache = get_cache()
+            key = f"hourly_quota:{user_id}:{quota_type}"
+            val = cache.get(key)
+            if val is None:
+                return True
+            return int(val) < hourly_limit
+        except Exception:
+            return True
+
+    def _increment_hourly_quota(self, user_id: str, quota_type: str):
+        try:
+            cache = get_cache()
+            key = f"hourly_quota:{user_id}:{quota_type}"
+            val = cache.get(key) or 0
+            cache.set(key, int(val) + 1, ex=3600)
+        except Exception:
+            pass

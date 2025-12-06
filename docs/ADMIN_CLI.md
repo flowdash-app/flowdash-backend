@@ -4,7 +4,7 @@ Command-line interface for managing FlowDash backend administration tasks.
 
 ## Overview
 
-The Admin CLI provides tools for managing user tester status and other administrative functions. It uses Click for command-line argument parsing and connects directly to the database.
+The Admin CLI provides tools for managing user tester status, resetting quotas, and other administrative functions. It uses Click for command-line argument parsing and connects directly to the database.
 
 ## Prerequisites
 
@@ -104,12 +104,83 @@ python -m app.cli.admin tester --email user@example.com
 python -m app.cli.admin tester --id firebase-uid-here
 ```
 
+---
+
+### `reset-quota` - Reset User Quotas
+
+Resets quota counts for a user by setting counts to 0. Useful for testers or support scenarios where a user's daily quota needs to be restored.
+
+#### Command Options
+
+- `--email <email>`: User email address
+- `--id <user_id>`: User ID (Firebase UID)
+- `--quota-type <type>`: Specific quota type to reset (`toggles`, `refreshes`, `error_views`). If omitted, resets all types.
+- `--date <YYYY-MM-DD>`: Target date for reset. Defaults to today.
+- `--yes`: Skip confirmation prompt
+- `--dry-run`: Show what would be changed without committing
+
+#### Usage Examples
+
+**Dry-run (preview changes without committing):**
+```bash
+python -m app.cli.admin reset-quota --email user@example.com --dry-run
+```
+
+**Reset all quotas for a user (with confirmation):**
+```bash
+python -m app.cli.admin reset-quota --email user@example.com
+```
+
+**Reset all quotas for a user (skip confirmation):**
+```bash
+python -m app.cli.admin reset-quota --email user@example.com --yes
+```
+
+**Reset only toggles quota:**
+```bash
+python -m app.cli.admin reset-quota --email user@example.com --quota-type toggles --yes
+```
+
+**Reset quotas for a specific date:**
+```bash
+python -m app.cli.admin reset-quota --email user@example.com --date 2025-12-01 --yes
+```
+
+**Reset by Firebase UID:**
+```bash
+python -m app.cli.admin reset-quota --id firebase-uid-here --yes
+```
+
+#### Example Output
+
+**Dry-run output:**
+```
+🔍 Dry run: would Reset quotas for user@example.com on 2025-12-02
+Found 3 quota rows that would be reset:
+  - type: toggles, count: 5, date: 2025-12-02
+  - type: refreshes, count: 12, date: 2025-12-02
+  - type: error_views, count: 3, date: 2025-12-02
+```
+
+**Successful reset:**
+```
+✓ Reset 3 quota rows for user@example.com
+```
+
+**No quota rows found:**
+```
+No quota rows would be affected
+```
+
+---
+
 ## Important Notes
 
 1. **For non-list operations**, you must provide either `--email` or `--id`
 2. **Tester limit**: Maximum of 100 testers (enforced when setting tester status)
-3. **Database connection**: The CLI connects to the database using `SessionLocal()` from your database configuration
-4. **Environment**: Ensure your `.env` file is configured with the correct `DATABASE_URL` before running
+3. **Quota types**: Valid types are `toggles`, `refreshes`, `error_views`
+4. **Database connection**: The CLI connects to the database using `SessionLocal()` from your database configuration
+5. **Environment**: Ensure your `.env` file is configured with the correct `DATABASE_URL` before running
 
 ## Output Messages
 
@@ -117,6 +188,7 @@ The CLI provides clear feedback for each operation:
 
 - ✓ Success messages indicate successful operations
 - ❌ Error messages indicate failures or issues
+- 🔍 Dry-run messages show what would happen without making changes
 - Status messages show current state without making changes
 
 ### Example Output
@@ -150,6 +222,7 @@ User user@example.com is tester
 ❌ User not found: user@example.com
 ❌ Tester limit reached (100)
 ❌ Please provide --email or --id for this operation
+❌ Invalid date format. Use YYYY-MM-DD
 ```
 
 ## Troubleshooting
@@ -193,6 +266,8 @@ If you get "User not found" errors:
 ### Quick Reference
 
 ```bash
+# === TESTER MANAGEMENT ===
+
 # List all testers
 python -m app.cli.admin tester --list
 
@@ -213,6 +288,26 @@ python -m app.cli.admin tester --email <email>
 
 # Check status (by ID)
 python -m app.cli.admin tester --id <uid>
+
+# === QUOTA MANAGEMENT ===
+
+# Dry-run (preview reset)
+python -m app.cli.admin reset-quota --email <email> --dry-run
+
+# Reset all quotas (with confirmation)
+python -m app.cli.admin reset-quota --email <email>
+
+# Reset all quotas (skip confirmation)
+python -m app.cli.admin reset-quota --email <email> --yes
+
+# Reset specific quota type
+python -m app.cli.admin reset-quota --email <email> --quota-type toggles --yes
+
+# Reset for specific date
+python -m app.cli.admin reset-quota --email <email> --date 2025-12-01 --yes
+
+# Reset by user ID
+python -m app.cli.admin reset-quota --id <uid> --yes
 ```
 
 ## Future Commands
