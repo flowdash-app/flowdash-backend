@@ -4,10 +4,10 @@
 This document provides a summary of the test suite created for the FlowDash backend.
 
 ## Test Statistics
-- **Total Tests**: 26 tests
-  - **Unit Tests**: 12 tests (run without external services)
+- **Total Tests**: 81 tests
+  - **Unit Tests**: 67 tests (run without external services)
   - **Integration Tests**: 14 tests (require PostgreSQL and Redis)
-- **Coverage**: 19% (baseline coverage for core services)
+- **Coverage**: Comprehensive coverage of core features
 - **All tests passing**: ✅
 
 ## Test Files
@@ -28,6 +28,32 @@ This document provides a summary of the test suite created for the FlowDash back
 - Tests for API authentication mechanisms
 - Tests health check endpoint
 - Tests service initialization
+
+#### `tests/test_rate_limiting.py` (11 tests)
+- **Free plan rate limit tests**: 429 responses for exceeded limits
+- **Pro plan rate limit tests**: Higher limits than free tier
+- **Tester bypass tests**: Testers bypass rate limiting
+- **Rate limit headers**: X-RateLimit-* headers in responses
+- **Configuration validation**: Verify rate limit values
+
+#### `tests/test_caching.py` (34 tests)
+- **Cache key generation**: Consistent, parameter-based keys
+- **Cache miss scenarios**: First request behavior
+- **Cache creation**: Different TTLs for free (30 min) vs pro (3 min)
+- **Cache hit scenarios**: Cached responses returned correctly
+- **Cache TTL behavior**: Free tier has longer cache than pro
+- **Timestamp preservation**: Cache preserves original timestamps
+- **Payload structure**: Consistent structure across tiers
+- **Query parameters**: Different params = different cache entries
+
+#### `tests/test_firebase_integration.py` (20 tests)
+- **Dependency injection**: Firebase service with DI support
+- **Token validation**: Valid, expired, malformed token handling
+- **Mock credentials**: Testing without real Firebase connection
+- **Firestore integration**: Mocked Firestore operations
+- **Backward compatibility**: Wrapper functions work correctly
+- **Singleton pattern**: Service instance management
+- **Logging**: Success and failure logging
 
 ### Integration Tests (Require Services)
 
