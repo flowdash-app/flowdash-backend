@@ -74,6 +74,23 @@ class QuotaService:
             today = date.today()
             cache = get_cache()
             lock_key = f"quota_lock:{user_id}:{quota_type}:{today}"
+            quota = db.query(Quota).filter(
+                and_(
+                    Quota.user_id == user_id,
+                    Quota.quota_type == quota_type,
+                    Quota.quota_date == today
+                )
+            ).first()
+            
+            if not quota:
+                quota = Quota(
+                    id=str(uuid.uuid4()),
+                    user_id=user_id,
+                    quota_type=quota_type,
+                    quota_date=today,
+                    count=0
+                )
+                db.add(quota)
             
             # Try to acquire lock (wait up to 5 seconds)
             lock_acquired = cache.acquire_lock(lock_key, timeout_seconds=10, block_seconds=5)
