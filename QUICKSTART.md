@@ -65,7 +65,7 @@ source venv/bin/activate
 alembic revision --autogenerate -m "Initial migration"
 
 # Apply migrations
-alembic upgrade head
+alembic upgrade heads
 
 # Verify tables were created (optional)
 # Connect to database and check: \dt
@@ -150,7 +150,7 @@ alembic current
 
 # If needed, rollback and reapply
 alembic downgrade base
-alembic upgrade head
+alembic upgrade heads
 ```
 
 ## Development Commands

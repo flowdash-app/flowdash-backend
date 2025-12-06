@@ -446,7 +446,7 @@ target_metadata = Base.metadata
 Create initial migration:
 ```bash
 alembic revision --autogenerate -m "Initial migration"
-alembic upgrade head
+alembic upgrade heads
 ```
 
 ### 7. API Routes Structure
@@ -826,7 +826,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 alembic revision --autogenerate -m "Description"
 
 # Apply migrations
-alembic upgrade head
+alembic upgrade heads
 
 # Rollback migration
 alembic downgrade -1
