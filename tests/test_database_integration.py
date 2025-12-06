@@ -2,13 +2,14 @@
 Integration tests for database operations
 """
 
-import pytest
 from datetime import datetime
+
+import pytest
 from sqlalchemy.orm import Session
 
-from app.models.user import User
 from app.models.n8n_instance import N8NInstance
 from app.models.quota import Quota
+from app.models.user import User
 
 
 @pytest.mark.integration
@@ -31,10 +32,10 @@ class TestDatabaseIntegration:
             plan_tier="free",
             is_tester=False
         )
-        
+
         db_session.add(user)
         db_session.commit()
-        
+
         # Verify
         retrieved = db_session.query(User).filter(User.id == "test_user_db_123").first()
         assert retrieved is not None

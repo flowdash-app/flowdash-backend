@@ -2,14 +2,15 @@
 Tests for webhook handler - specifically testing tester access to push notifications
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.notifier.webhook_handler import handle_n8n_error, N8NErrorRequest, Severity
-from app.models.user import User
 from app.models.n8n_instance import N8NInstance
+from app.models.user import User
+from app.notifier.webhook_handler import N8NErrorRequest, Severity, handle_n8n_error
 
 
 @pytest.fixture

@@ -2,13 +2,13 @@
 Pytest configuration for testing
 """
 
-import os
-import sys
-import pytest
 import json
+import os
+from unittest.mock import MagicMock
+
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from unittest.mock import MagicMock, patch
 
 # Create mock Firebase credentials before any imports
 credentials_path = "/tmp/test-creds.json"
@@ -49,15 +49,15 @@ def mock_firebase_admin(monkeypatch):
     mock_cred = MagicMock()
     mock_credentials.Certificate.return_value = mock_cred
     monkeypatch.setattr("firebase_admin.credentials.Certificate", mock_credentials.Certificate)
-    
+
     # Mock firebase_admin.initialize_app
     mock_init = MagicMock()
     monkeypatch.setattr("firebase_admin.initialize_app", mock_init)
-    
+
     # Mock firebase_admin.auth
     mock_auth = MagicMock()
     monkeypatch.setattr("firebase_admin.auth", mock_auth)
-    
+
     # Mock firestore client
     mock_firestore = MagicMock()
     monkeypatch.setattr("firebase_admin.firestore.client", mock_firestore)
@@ -70,16 +70,16 @@ def db_engine():
     """Create database engine for testing"""
     # Import after env vars are set
     from app.core.database import Base
-    
+
     database_url = os.environ.get("DATABASE_URL")
     engine = create_engine(database_url)
-    
+
     try:
         # Create all tables
         Base.metadata.create_all(bind=engine)
-        
+
         yield engine
-        
+
         # Drop all tables after tests
         Base.metadata.drop_all(bind=engine)
     except Exception:
@@ -92,12 +92,12 @@ def db_session(db_engine):
     """Create a new database session for a test"""
     if db_engine is None:
         pytest.skip("Database not available")
-    
+
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=db_engine)
     session = TestingSessionLocal()
-    
+
     yield session
-    
+
     # Rollback any changes and close session
     session.rollback()
     session.close()
@@ -107,10 +107,10 @@ def db_session(db_engine):
 def redis_client():
     """Create Redis client for testing"""
     import redis
-    
+
     redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/1")
     redis_password = os.environ.get("REDIS_PASSWORD", "")
-    
+
     try:
         client = redis.from_url(
             redis_url,
@@ -121,9 +121,9 @@ def redis_client():
         )
         # Test connection
         client.ping()
-        
+
         yield client
-        
+
         # Clean up test data
         client.flushdb()
         client.close()

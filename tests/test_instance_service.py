@@ -2,14 +2,15 @@
 Tests for InstanceService
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.services.instance_service import InstanceService
 from app.models.n8n_instance import N8NInstance
 from app.models.user import User
+from app.services.instance_service import InstanceService
 
 
 @pytest.fixture
