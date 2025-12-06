@@ -55,7 +55,8 @@ if [ $counter -ge $timeout ]; then
 else
     # Run database migrations
     echo "Running database migrations..."
-    alembic upgrade head
+    # Use 'heads' to support multiple alembic heads in repo
+    alembic upgrade heads
     
     if [ $? -eq 0 ]; then
         echo "✓ Migrations completed"

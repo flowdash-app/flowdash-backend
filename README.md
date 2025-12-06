@@ -43,11 +43,11 @@ Edit `.env` with your configuration:
 
 ```bash
 # Run migrations
-alembic upgrade head
+alembic upgrade heads
 
 # Or create initial migration if needed
 alembic revision --autogenerate -m "Initial migration"
-alembic upgrade head
+alembic upgrade heads
 ```
 
 ### 4. Run Development Server
@@ -141,7 +141,7 @@ pytest --cov=app tests/
 alembic revision --autogenerate -m "Description"
 
 # Apply migrations
-alembic upgrade head
+alembic upgrade heads
 
 # Rollback
 alembic downgrade -1

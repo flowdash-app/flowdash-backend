@@ -83,7 +83,7 @@ def main():
         print("✅ All checks passed! You're ready to run the server.")
         print("\nNext steps:")
         print("  1. Start database: docker-compose -f docker-compose.dev.yml up -d")
-        print("  2. Run migrations: alembic upgrade head")
+        print("  2. Run migrations: alembic upgrade heads")
         print("  3. Start server: uvicorn app.main:app --reload")
     else:
         print("❌ Some checks failed. Please fix the issues above.")
